@@ -569,6 +569,9 @@ var ROLE_VIRUS_CD = 15.0;              // 放罐冷却（秒）
 var ROLE_VIRUS_JARS = 2;               // 每次放置数量
 var ROLE_VIRUS_JAR_HITS = 1;           // 每个罐子被碰几次后破碎（1 = 一碰就消失）
 var ROLE_VIRUS_JAR_R = 13;             // 罐子半径（px）
+var ROLE_VIRUS_SPREAD = 45 * Math.PI / 180;  // 联机手动模式：朝点击方向的扇形张角
+var ROLE_VIRUS_DIST_MIN = 70;          // 扇形内投放距离下限（px）
+var ROLE_VIRUS_DIST_MAX = 220;         // 扇形内投放距离上限（px）
 var ROLE_VIRUS_JAR_TOUCH_CD = 0.6;     // 同一个球对同一个罐的触碰冷却（秒）
 var ROLE_VIRUS_DMG_TICKS = 3;          // 分几次结算
 var ROLE_VIRUS_TICK_INTERVAL = 1.0;    // 每次结算间隔（秒）
@@ -1969,6 +1972,36 @@ function spawnVirusJars(owner) {
   });
 }
 
+// 定向投放（联机手动模式）：在以点击方向为中心的 45° 扇形内随机放罐子
+function spawnVirusJarsDirected(owner, ang) {
+  var b = balls[owner];
+  if (!b) return;
+  var team = teamOf(owner);
+  var color = ROLES[selected[owner]].color;
+  var half = ROLE_VIRUS_SPREAD / 2;          // ±22.5°
+  var margin = ROLE_VIRUS_JAR_R + 10;
+  for (var n = 0; n < ROLE_VIRUS_JARS; n++) {
+    var a = ang + (Math.random() * 2 - 1) * half;
+    var dist = rand(ROLE_VIRUS_DIST_MIN, ROLE_VIRUS_DIST_MAX);
+    var x = b.x + Math.cos(a) * dist;
+    var y = b.y + Math.sin(a) * dist;
+    // 夹到场地内
+    x = Math.max(ARENA.x + margin, Math.min(ARENA.x + ARENA.size - margin, x));
+    y = Math.max(ARENA.y + margin, Math.min(ARENA.y + ARENA.size - margin, y));
+    virusJars.push({
+      owner: owner, team: team,
+      x: x, y: y, r: ROLE_VIRUS_JAR_R,
+      color: color, hits: 0, cool: {},
+      born: globalTime
+    });
+    spawnParticles(x, y, color, 8);
+  }
+  floatTexts.push({
+    x: b.x, y: b.y - 30,
+    text: '投放病毒罐 ×' + ROLE_VIRUS_JARS, life: 1.2, color: color
+  });
+}
+
 // 罐子触碰检测 + 三段延迟伤害结算
 function updateVirus(dt) {
   for (var j = virusJars.length - 1; j >= 0; j--) {
@@ -2445,21 +2478,39 @@ function update(dt) {
       var mathematician = balls[p];
       if (mathematician.mathPhase === 'cooldown') {
         mathematician.mathT = Math.max(0, mathematician.mathT - dt);
-        if (!manual && mathematician.mathT <= 0) {
+        if (mathematician.mathT <= 0) {
+          // 冷却好了就自动开始蓄力（手动模式也一样）
           mathematician.mathPhase = 'charge';
           mathematician.mathT = ROLE_MATH_CHARGE;
           mathematician.mathExpression = createMathExpression();
+          floatTexts.push({
+            x: mathematician.x, y: mathematician.y - 30,
+            text: mathExpressionText(mathematician.mathExpression),
+            life: 1.4, color: mathematician.color
+          });
         }
       } else if (mathematician.mathPhase === 'charge') {
         mathematician.mathT -= dt;
-        if (mathematician.mathT <= 0) fireMathBullet(p, mathematician.castAng);
+        if (mathematician.mathT <= 0) {
+          if (manual) {
+            // 手动模式：蓄好进入「待发射」，等玩家点击方向
+            mathematician.mathPhase = 'ready';
+            mathematician.mathT = 0;
+            floatTexts.push({
+              x: mathematician.x, y: mathematician.y - 34,
+              text: '算式就绪 · 点击方向发射', life: 1.6, color: mathematician.color
+            });
+          } else {
+            fireMathBullet(p, null);
+          }
+        }
       }
     } else if (role === 'dynmath') {
-      // 爆破数学家：15 秒冷却 → 5 秒算式蓄力 → 掷出算式炸药
+      // 爆破数学家：15 秒冷却 → 5 秒算式蓄力 → 手动模式下进入待发射
       var dynMathBall = balls[p];
       if (dynMathBall.dynmathPhase === 'cooldown') {
         dynMathBall.dynmathT = Math.max(0, dynMathBall.dynmathT - dt);
-        if (!manual && dynMathBall.dynmathT <= 0) {
+        if (dynMathBall.dynmathT <= 0) {
           dynMathBall.dynmathPhase = 'charge';
           dynMathBall.dynmathT = ROLE_DYNMATH_CHARGE;
           dynMathBall.dynmathExpression = createMathExpression();
@@ -2471,7 +2522,18 @@ function update(dt) {
         }
       } else if (dynMathBall.dynmathPhase === 'charge') {
         dynMathBall.dynmathT -= dt;
-        if (dynMathBall.dynmathT <= 0) fireDynMathBomb(p, dynMathBall.castAng);
+        if (dynMathBall.dynmathT <= 0) {
+          if (manual) {
+            dynMathBall.dynmathPhase = 'ready';
+            dynMathBall.dynmathT = 0;
+            floatTexts.push({
+              x: dynMathBall.x, y: dynMathBall.y - 34,
+              text: '算式炸弹就绪 · 点击方向投掷', life: 1.6, color: dynMathBall.color
+            });
+          } else {
+            fireDynMathBomb(p, null);
+          }
+        }
       }
     } else if (role === 'gunner') {
       // 枪手：每 5 秒朝敌方发射一发可反弹子弹（手动模式下由点击触发）
@@ -3190,6 +3252,8 @@ function drawSkillRing(b) {
       actMax = ROLE_MATH_CHARGE;
       actFrac = 1 - Math.max(0, b.mathT) / actMax;
       actColor = '#f0d66d'; actLabel = b.mathT.toFixed(1) + 's'; actGlow = true;
+    } else if (b.mathPhase === 'ready') {
+      coolMax = ROLE_MATH_CD; coolColor = '#f0d66d'; coolLabel = '待发射';
     }
   } else if (role === 'dynmath') {
     if (b.dynmathPhase === 'cooldown') {
@@ -3199,6 +3263,8 @@ function drawSkillRing(b) {
       actMax = ROLE_DYNMATH_CHARGE;
       actFrac = 1 - Math.max(0, b.dynmathT) / actMax;
       actColor = ROLES[selected[p]].color; actLabel = b.dynmathT.toFixed(1) + 's'; actGlow = true;
+    } else if (b.dynmathPhase === 'ready') {
+      coolMax = ROLE_DYNMATH_CD; coolColor = ROLES[selected[p]].color; coolLabel = '待投掷';
     }
   } else if (role === 'physicist') {
     if (b.physPhase === 'active') {
@@ -3888,6 +3954,8 @@ function skillStateText(p, r) {
     if (mathBall.mathPhase === 'charge')
       return mathExpressionText(mathBall.mathExpression) + ' · ' +
         mathBall.mathT.toFixed(1) + 's';
+    if (mathBall.mathPhase === 'ready')
+      return mathExpressionText(mathBall.mathExpression) + ' · 就绪，点击方向发射';
   } else if (role === 'dynmath') {
     var dynMathState = balls[p];
     if (dynMathState.dynmathPhase === 'cooldown') return '算式炸弹冷却 ' + dynMathState.dynmathT.toFixed(1) + 's';
@@ -3900,6 +3968,9 @@ function skillStateText(p, r) {
           Math.round(dynMathRadiusOf(r, dynMathState.dynmathExpression.result)) + 'px';
       }
       return dynMathInfo;
+    }
+    if (dynMathState.dynmathPhase === 'ready') {
+      return mathExpressionText(dynMathState.dynmathExpression) + ' · 就绪，点击方向投掷';
     }
   } else if (role === 'physicist') {
     var physState = balls[p];
@@ -4329,8 +4400,8 @@ function canCastNow(owner) {
     return cd[owner] <= 0;
   }
   if (r === 'cowboy') return cd[owner] <= 0 && b.cowboyIdx == null;
-  if (r === 'mathematician') return b.mathPhase === 'cooldown' && b.mathT <= 0;
-  if (r === 'dynmath') return b.dynmathPhase === 'cooldown' && b.dynmathT <= 0;
+  if (r === 'mathematician') return b.mathPhase === 'ready';
+  if (r === 'dynmath') return b.dynmathPhase === 'ready';
   if (r === 'ghost') return (b.ghostPhase || 'cooldown') === 'ready';
   if (r === 'medic') return b.medicPhase === 'ready';
   if (r === 'physicist') return b.physPhase === 'cooldown' && b.physT <= 0;
@@ -4603,19 +4674,15 @@ function castSkill(owner, ang) {
     return true;
   }
   if (r === 'mathematician') {
-    if (b.mathPhase !== 'cooldown' || b.mathT > 0) return false;
+    if (b.mathPhase !== 'ready') return false;   // 蓄力完成后点击才发射
     b.castAng = ang;
-    b.mathPhase = 'charge';
-    b.mathT = ROLE_MATH_CHARGE;
-    b.mathExpression = createMathExpression();
+    fireMathBullet(owner, ang);
     return true;
   }
   if (r === 'dynmath') {
-    if (b.dynmathPhase !== 'cooldown' || b.dynmathT > 0) return false;
+    if (b.dynmathPhase !== 'ready') return false;
     b.castAng = ang;
-    b.dynmathPhase = 'charge';
-    b.dynmathT = ROLE_DYNMATH_CHARGE;
-    b.dynmathExpression = createMathExpression();
+    fireDynMathBomb(owner, ang);
     return true;
   }
   if (r === 'ghost') {
@@ -4644,7 +4711,8 @@ function castSkill(owner, ang) {
   }
   if (r === 'virus') {
     if (cd[owner] > 0) return false;
-    spawnVirusJars(owner);
+    // 手动模式：在点击方向 ±22.5° 的扇形内随机放罐子
+    spawnVirusJarsDirected(owner, ang);
     cd[owner] = ROLE_VIRUS_CD;
     return true;
   }
