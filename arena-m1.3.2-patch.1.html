@@ -4611,8 +4611,15 @@ var MQ = {
 
 var MQ_TOPIC_ROOMS = 'arena/rooms/';
 var MQ_TOPIC_ANS = 'arena/ans/';
-var MQ_DEFAULT_URL = 'wss://broker.emqx.io:8084/mqtt';
-var SIG = { base: '', roomId: null, roomName: '', rooms: {}, listTimer: null, ansHandler: null };
+// 公共 broker 列表：第一个连不上会自动换下一个（公共测试服务器经常抽风/限流）
+var MQ_BROKERS = [
+  'wss://broker.emqx.io:8084/mqtt',
+  'wss://broker.hivemq.com:8884/mqtt',
+  'wss://test.mosquitto.org:8081/mqtt'
+];
+var MQ_DEFAULT_URL = MQ_BROKERS[0];
+var SIG = { base: '', roomId: null, roomName: '', rooms: {}, listTimer: null, ansHandler: null,
+  cand: [], ci: 0, failTimer: null };
 
 /* ---------- MQTT 编解码 ---------- */
 function mqEnc(s) { return new TextEncoder().encode(s); }
@@ -4697,13 +4704,20 @@ function mqConnect(url, cb) {
   };
 
   MQ.ws.onclose = function () {
+    var wasReady = MQ.ready;
     MQ.ready = false;
     if (MQ.keepTimer) { clearInterval(MQ.keepTimer); MQ.keepTimer = null; }
+    if (!wasReady && MQ.onFail) { var f = MQ.onFail; MQ.onFail = null; f(); return; }
     if (MQ.onClose) MQ.onClose();
   };
 
   MQ.ws.onerror = function () {
-    netSigStatus('MQTT 连接出错（地址是否正确？公共 broker 偶尔会限流）');
+    if (!MQ.ready && MQ.onFail) {
+      var f = MQ.onFail; MQ.onFail = null;
+      f();
+      return;
+    }
+    netSigStatus('MQTT 连接出错（公共 broker 偶尔会限流，可点「连接」重试）');
   };
 }
 
@@ -4743,22 +4757,68 @@ function mqHandle(type, flags, body) {
 /* ---------- 房间列表 ---------- */
 function netSigStatus(msg) { netStatus(msg); }
 
-function netSigGuessUrl() {
-  try { localStorage.getItem('arenaMqUrl'); } catch (e) { /* 忽略 */ }
-  return MQ_DEFAULT_URL;
+function netSigGuessUrl() { return MQ_DEFAULT_URL; }
+
+// 候选 broker：优先上次成功的，然后依次试全部；用户手填了别的地址就只试它
+function netSigCandidates() {
+  var input = document.getElementById('netSigUrl');
+  var typed = (input && input.value ? input.value : '').trim();
+  var saved = '';
+  try { saved = localStorage.getItem('arenaMqBroker') || ''; } catch (e) { saved = ''; }
+  var isBuiltin = MQ_BROKERS.indexOf(typed) >= 0;
+  if (typed && !isBuiltin) return [typed];        // 自定义地址：只试这一个
+  var list = [];
+  if (saved && MQ_BROKERS.indexOf(saved) >= 0) list.push(saved);
+  if (typed && isBuiltin) list.push(typed);
+  for (var i = 0; i < MQ_BROKERS.length; i++) {
+    if (list.indexOf(MQ_BROKERS[i]) < 0) list.push(MQ_BROKERS[i]);
+  }
+  return list;
 }
 
 function netSigConnect() {
-  var input = document.getElementById('netSigUrl');
-  var url = (input && input.value ? input.value : '').trim() || MQ_DEFAULT_URL;
-  try { localStorage.setItem('arenaMqUrl', url); } catch (e) { /* 忽略 */ }
-  netSigStatus('正在连接 MQTT ' + url + ' …');
+  SIG.cand = netSigCandidates();
+  SIG.ci = 0;
+  SIG.rooms = {};
+  netSigTryNext();
+}
+
+function netSigTryNext() {
+  if (SIG.ci >= SIG.cand.length) {
+    netSigStatus('公共 MQTT 全部连不上（可能被限流或临时抽风）。稍等 1~2 分钟再点「连接」，或直接用下面的「我是房主（手动）」配对码联机。');
+    return;
+  }
+  var url = SIG.cand[SIG.ci];
+  netSigStatus('正在连接 MQTT（' + (SIG.ci + 1) + '/' + SIG.cand.length + '）：' + url);
+  if (SIG.failTimer) { clearTimeout(SIG.failTimer); SIG.failTimer = null; }
+
+  // 6 秒内没有 CONNACK 就算失败，换下一个
+  SIG.failTimer = setTimeout(function () {
+    if (MQ.ready) return;
+    netSigStatus(url + ' 无响应，换下一个…');
+    try { if (MQ.ws) MQ.ws.close(); } catch (e) { /* 忽略 */ }
+    SIG.ci++;
+    netSigTryNext();
+  }, 6000);
+
+  MQ.onFail = function () {
+    if (SIG.failTimer) { clearTimeout(SIG.failTimer); SIG.failTimer = null; }
+    netSigStatus(url + ' 连接失败，换下一个…');
+    SIG.ci++;
+    setTimeout(netSigTryNext, 200);
+  };
+
   mqConnect(url, function () {
+    if (SIG.failTimer) { clearTimeout(SIG.failTimer); SIG.failTimer = null; }
+    MQ.onFail = null;
+    try { localStorage.setItem('arenaMqBroker', url); } catch (e) { /* 忽略 */ }
+    var input = document.getElementById('netSigUrl');
+    if (input) input.value = url;
     SIG.rooms = {};
     MQ.onMessage = netSigOnMessage;
-    MQ.onClose = function () { netSigStatus('MQTT 已断开'); };
+    MQ.onClose = function () { netSigStatus('MQTT 已断开（可点「连接」重连）'); };
     mqSubscribe(MQ_TOPIC_ROOMS + '+');
-    netSigStatus('已连接公共 MQTT，正在收集房间…');
+    netSigStatus('已连接 ' + url.replace('wss://', '').replace('/mqtt', '') + '，正在收集房间…');
     setTimeout(function () { netSigRenderRooms(); netSigStatus('房间列表已更新（公共 MQTT）'); }, 1200);
   });
 }
@@ -5152,9 +5212,9 @@ document.getElementById('sideConfirmBtn').addEventListener('click', function () 
   /* ---- 房间列表相关 ---- */
   var sigUrlInput = document.getElementById('netSigUrl');
   if (sigUrlInput) {
-    var saved = '';
-    try { saved = localStorage.getItem('arenaMqUrl') || ''; } catch (e) { saved = ''; }
-    sigUrlInput.value = saved || MQ_DEFAULT_URL;
+    var lastBroker = '';
+    try { lastBroker = localStorage.getItem('arenaMqBroker') || ''; } catch (e) { lastBroker = ''; }
+    sigUrlInput.value = lastBroker || MQ_DEFAULT_URL;
   }
   document.getElementById('netSigConnBtn').addEventListener('click', function () { netSigConnect(); });
   document.getElementById('netSigRefreshBtn').addEventListener('click', function () { netSigRefresh(); });
