@@ -4005,6 +4005,42 @@ var NET_ICE_SERVERS = [
   { urls: ['stun:stun.miwifi.com:3478'] }
 ];
 
+// ---- 连接过程诊断：统计本机候选类型，帮用户判断打洞是否可能成功 ----
+var netConnTimer = null;
+var netConnStart = 0;
+
+function netStopConnTimer() {
+  if (netConnTimer) { clearInterval(netConnTimer); netConnTimer = null; }
+}
+
+function netCandStats(pc) {
+  var sdp = (pc && pc.localDescription && pc.localDescription.sdp) || '';
+  return {
+    host: (sdp.match(/ typ host/g) || []).length,
+    srflx: (sdp.match(/ typ srflx/g) || []).length,
+    relay: (sdp.match(/ typ relay/g) || []).length
+  };
+}
+
+function netShowConnecting(pc) {
+  netStopConnTimer();
+  netConnStart = Date.now();
+  netConnTimer = setInterval(function () {
+    var s = Math.round((Date.now() - netConnStart) / 1000);
+    if (s >= 15) {
+      netStopConnTimer();
+      var c = netCandStats(pc);
+      netStatus('正在建立连接…已 ' + s + ' 秒，打洞可能失败。' +
+        '本机候选：host ' + c.host + ' / 公网 srflx ' + c.srflx + ' / 中继 relay ' + c.relay + '。' +
+        (c.srflx === 0
+          ? '没有公网候选 → 双方不在同一局域网时基本连不上（STUN 可能被墙），请改用同一 Wi-Fi。'
+          : '若对方也是严格 NAT（移动网络/公司网），需要 TURN 中继才能连上。'));
+    } else {
+      netStatus('正在建立连接…（' + s + ' 秒）');
+    }
+  }, 1000);
+}
+
 function netNewPC() {
   var pc;
   try {
@@ -4015,11 +4051,17 @@ function netNewPC() {
   pc.onconnectionstatechange = function () {
     var st = pc.connectionState;
     if (st === 'connected') {
+      netStopConnTimer();
       NET.connected = true;
-      netStatus('已连接 ✅ 可以开始对局了');
-      onNetConnected();
+      var c = netCandStats(pc);
+      netStatus('已连接 ✅ 可以开始对局了（本机候选 host ' + c.host +
+        ' / 公网 srflx ' + c.srflx + ' / 中继 relay ' + c.relay + '）');
+      netOnConnected();        // 修复：原来误写成 onNetConnected()（未定义）
+    } else if (st === 'connecting') {
+      netShowConnecting(pc);
     } else if (st === 'failed' || st === 'closed') {
-      netTeardown('连接已断开（' + st + '），已切回单机模式');
+      netStopConnTimer();
+      netTeardown('连接失败（' + st + '）：打洞没成功，通常是双方 NAT 都比较严格。可断开重试、改用同一 Wi-Fi，或使用配对码。');
     } else if (st === 'disconnected') {
       // 可能自动恢复，先只提示；DC 真断了会走 dc.onclose 触发复位
       netStatus('连接暂时中断，正在尝试恢复…');
@@ -4103,7 +4145,7 @@ function netBindChannel(dc) {
   dc.onopen = function () {
     NET.connected = true;
     netStatus('已连接 ✅ 可以开始对局了');
-    onNetConnected();
+    netOnConnected();          // 修复：原来误写成 onNetConnected()（未定义），握手因此从未执行
   };
   dc.onmessage = function (ev) {
     var msg;
@@ -4155,6 +4197,7 @@ function netTeardown(reason) {
     }
   } catch (e) { /* 忽略 */ }
   try { if (typeof netSigCloseRoom === 'function') netSigCloseRoom(); } catch (e) { /* 忽略 */ }
+  try { if (typeof netStopConnTimer === 'function') netStopConnTimer(); } catch (e) { /* 忽略 */ }
   NET.connected = false;
   NET.mode = null;
   netGuestRunning = false;
