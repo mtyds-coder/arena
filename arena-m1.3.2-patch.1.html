@@ -1,0 +1,5311 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>小球竞技场 m1.3.2-patch.1（房间列表联机）</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    background: #070912;
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+    color: #e8ecf5;
+    min-height: 100vh;
+    display: flex; flex-direction: column; align-items: center;
+    padding: 12px 0 24px;
+    overflow-x: hidden;
+  }
+  h1 {
+    font-size: 20px; letter-spacing: 4px; margin-top: 6px;
+    color: #4fc3ff; text-shadow: 0 0 18px rgba(79,195,255,.5);
+  }
+
+  /* ===== 顶部双方 ===== */
+  #topbar {
+    display: flex; align-items: center; justify-content: center; gap: 10px;
+    width: min(94vw, 640px); margin-top: 12px;
+  }
+  .player {
+    flex: 1; display: flex; flex-direction: column; gap: 6px;
+    padding: 8px 12px; border-radius: 12px;
+    background: rgba(255,255,255,.04);
+    border: 1px solid rgba(255,255,255,.08);
+  }
+  .player .row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .pname { font-size: 14px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .hpNum { font-size: 12px; font-variant-numeric: tabular-nums; color: #c7cee0; white-space: nowrap; }
+  #topbar.team-mode .teamHpTotal { display: none; }
+  .teamHpRows { display: none; flex-direction: column; gap: 6px; }
+  #topbar.team-mode .teamHpRows { display: flex; }
+  .ballHpRow { min-width: 0; }
+  .ballHpHead { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-bottom: 3px; }
+  .ballHpName { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; font-weight: 700; }
+  .ballHpNum { flex: 0 0 auto; font-size: 11px; font-variant-numeric: tabular-nums; color: #c7cee0; white-space: nowrap; }
+  .hpWrap { height: 8px; border-radius: 4px; background: rgba(255,255,255,.1); overflow: hidden; }
+  .hp-fill { height: 100%; width: 100%; border-radius: 4px; transition: width .25s linear, background .2s; }
+  .vs { font-size: 13px; font-weight: 800; color: #8a93a6; flex: 0 0 auto; }
+
+  /* ===== 战场（身份列表已移到下方，战场不再被覆盖）===== */
+  #wrap {
+    margin-top: 14px; position: relative;
+    width: min(92vw, 600px); aspect-ratio: 1 / 1;
+  }
+  canvas {
+    width: 100%; height: 100%; display: block; border-radius: 16px;
+    background: #0b1020;
+    box-shadow: 0 0 0 2px rgba(255,255,255,.08), 0 0 40px rgba(79,195,255,.12);
+    /* 联机手动操作：禁止浏览器接管触摸手势，长按拖动能当鼠标用 */
+    touch-action: none;
+    -webkit-user-select: none; user-select: none;
+    -webkit-touch-callout: none;
+  }
+  body.net-lock {
+    overflow: hidden;            /* 对局中锁定页面滚动 */
+    overscroll-behavior: none;
+    touch-action: none;
+  }
+
+  /* ===== 身份列表：一行横向列表，战场下方 ===== */
+  #rolePanels {
+    width: min(94vw, 640px);
+    margin-top: 14px;
+    background: rgba(13,17,32,.72);
+    border: 1px solid rgba(255,255,255,.08);
+    border-radius: 14px;
+    padding: 6px;
+    display: flex; flex-direction: column; gap: 2px;
+    transition: opacity .2s, transform .2s;
+  }
+  #rolePanels.hide { opacity: 0; pointer-events: none; }
+  #rolePanels.hide.left  { transform: translateY(10px); }
+  #rolePanels.hide.right { transform: translateY(10px); }
+  .rp-head {
+    font-size: 11px; color: #8a93a6; letter-spacing: 1px;
+    padding: 5px 8px 2px;
+  }
+  .rp-body {
+    display: flex; gap: 14px; padding: 4px 6px 6px;
+  }
+  .rp-col { flex: 1 1 50%; display: flex; flex-direction: column; gap: 6px; }
+  .rp-side {
+    font-size: 12px; letter-spacing: .14em; text-align: center;
+    padding: 3px 0; border-radius: 7px;
+    background: rgba(255,255,255,.06);
+  }
+  .rp-side0 { color: #7fd4ff; }
+  .rp-side1 { color: #ff9ec7; }
+  .role-list {
+    display: flex; flex-direction: column; gap: 6px;
+  }
+  .rp-pick { display: flex; flex-direction: column; gap: 4px; }
+  .rp-pick-title { display: none; color: #8a93a6; font-size: 10px; padding-left: 4px; }
+  #rolePanels.team-mode .rp-pick-title { display: block; }
+  .rp-pick.extra { display: none; }
+  #rolePanels.team-mode .rp-pick.extra { display: flex; }
+  .role-btn {
+    flex: 1 1 auto;
+    width: 100%;
+    box-sizing: border-box;
+    text-align: left; cursor: pointer;
+    padding: 8px 12px; border-radius: 10px;
+    background: rgba(255,255,255,.03);
+    border: 1px solid rgba(255,255,255,.09);
+    color: #c7cee0; font-size: 13px; font-weight: 600;
+    transition: transform .1s, background .15s, border-color .15s;
+    display: flex; align-items: center; gap: 9px;
+  }
+  .role-btn:active { transform: scale(.97); }
+  .role-btn .rdot {
+    flex: 0 0 auto; width: 9px; height: 9px; border-radius: 50%;
+    background: currentColor; opacity: .55;
+    box-shadow: 0 0 8px currentColor;
+  }
+  .role-btn .rname { white-space: nowrap; }
+
+  .role-btn { display: flex; align-items: center; gap: 8px; }
+  .role-btn .rname { font-size: 13px; font-weight: 600; flex-shrink: 0; }
+  .role-btn .rdesc {
+    font-size: 10px; color: #9aa7b4; line-height: 1.25;
+    text-align: left; flex: 1 1 auto;
+  }
+  .role-btn.selected {
+    background: rgba(255,255,255,.11);
+    border-color: currentColor;
+    box-shadow: inset 3px 0 0 currentColor, 0 0 14px -4px currentColor;
+  }
+  .role-btn.selected .rdot { opacity: 1; }
+  .role-btn[disabled] {
+    opacity: .35; cursor: not-allowed;
+  }
+
+  /* ===== 底部按钮 ===== */
+  #ctrlBar { margin-top: 16px; }
+  #ctrlBtn {
+    cursor: pointer; min-width: 160px; padding: 12px 36px;
+    font-size: 16px; font-weight: 800; letter-spacing: 2px;
+    border-radius: 30px; border: none; color: #070912;
+    background: linear-gradient(90deg, #4fc3ff, #2dd4bf);
+    box-shadow: 0 6px 24px rgba(79,195,255,.35);
+    transition: transform .1s, opacity .2s;
+  }
+  #ctrlBtn:active { transform: scale(.94); }
+  #ctrlBtn.start { background: linear-gradient(90deg, #4fc3ff, #2dd4bf); }
+  #ctrlBtn.stop  { background: linear-gradient(90deg, #ff6b9d, #ffb84f); }
+  #delayBtn {
+    margin-left: 12px;
+    cursor: pointer; min-width: 160px; padding: 12px 36px;
+    font-size: 16px; font-weight: 800; letter-spacing: 2px;
+    border-radius: 30px; border: none; color: #070912;
+    background: linear-gradient(90deg, #b388ff, #7c4dff);
+    box-shadow: 0 6px 24px rgba(179,136,255,.35);
+    transition: transform .1s, opacity .2s;
+  }
+  #delayBtn:active { transform: scale(.94); }
+  #delayBtn:disabled { opacity: .5; cursor: not-allowed; }
+  #modeBtn {
+    margin-left: 12px;
+    cursor: pointer; min-width: 92px; padding: 12px 20px;
+    font-size: 16px; font-weight: 800; letter-spacing: 1px;
+    border-radius: 30px; border: 1px solid rgba(179,136,255,.7);
+    color: #e8ecf5; background: rgba(179,136,255,.14);
+    transition: transform .1s, background .15s, opacity .2s;
+  }
+  #modeBtn:active { transform: scale(.94); }
+  #modeBtn.active { color: #070912; background: linear-gradient(90deg, #b388ff, #7c4dff); }
+  #modeBtn:disabled { opacity: .5; cursor: not-allowed; }
+  #bossBtn {
+    margin-left: 12px;
+    cursor: pointer; min-width: 96px; padding: 12px 20px;
+    font-size: 16px; font-weight: 800; letter-spacing: 1px;
+    border-radius: 30px; border: 1px solid rgba(255,77,109,.75);
+    color: #ffd7de; background: rgba(255,77,109,.14);
+    transition: transform .1s, background .15s, opacity .2s;
+  }
+  #bossBtn:active { transform: scale(.94); }
+  #bossBtn.active { color: #fff; background: linear-gradient(90deg, #ff4d6d, #c1121f); border-color: rgba(255,140,160,.9); box-shadow: 0 6px 24px rgba(255,77,109,.4); }
+  #bossBtn:disabled { opacity: .5; cursor: not-allowed; }
+
+  /* boss 战：蓝方展开两个队员槽；粉方那一列改成 BOSS 选择列表 */
+  .rp-boss { display: none; flex-direction: column; gap: 6px; }
+  #rolePanels.boss-mode .rp-pick.extra { display: flex; }
+  #rolePanels.boss-mode .rp-pick-title { display: block; }
+  #rolePanels.boss-mode .rp-col:last-child .rp-pick { display: none; }
+  #rolePanels.boss-mode .rp-col:last-child .rp-boss { display: flex; }
+  #rolePanels.boss-mode .rp-side1 { color: #ff8fa3; }
+
+  /* ===== 联机 ===== */
+  #netBtn {
+    margin-left: 12px;
+    cursor: pointer; min-width: 88px; padding: 12px 18px;
+    font-size: 16px; font-weight: 800; letter-spacing: 1px;
+    border-radius: 30px; border: 1px solid rgba(94,234,212,.7);
+    color: #d7fff7; background: rgba(94,234,212,.14);
+    transition: transform .1s, background .15s, opacity .2s;
+  }
+  #netBtn:active { transform: scale(.94); }
+  #netBtn.active { color: #04231f; background: linear-gradient(90deg, #5eead4, #22d3ee); border-color: rgba(94,234,212,.9); }
+  #netPanel {
+    position: fixed; inset: 0; z-index: 30;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(3,5,12,.78); backdrop-filter: blur(6px);
+    padding: 16px;
+  }
+  #netPanel.hidden { display: none; }
+  .net-card {
+    width: min(94vw, 560px); max-height: 88vh; overflow-y: auto;
+    padding: 20px 22px; border-radius: 18px;
+    background: rgba(13,17,32,.98); border: 1px solid rgba(255,255,255,.12);
+    box-shadow: 0 20px 60px rgba(0,0,0,.65);
+    color: #e8ecf5; font-size: 13px; line-height: 1.6;
+  }
+  .net-card h3 { font-size: 16px; margin-bottom: 6px; color: #5eead4; letter-spacing: 1px; }
+  .net-card p { color: #8a93a6; font-size: 12px; margin-bottom: 10px; }
+  .net-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+  .net-card button {
+    cursor: pointer; padding: 9px 16px; border-radius: 22px; border: none;
+    font-size: 13px; font-weight: 700; color: #04231f;
+    background: linear-gradient(90deg, #5eead4, #22d3ee);
+  }
+  .net-card button.ghost {
+    color: #c7cee0; background: rgba(255,255,255,.08);
+    border: 1px solid rgba(255,255,255,.16);
+  }
+  .net-card button:disabled { opacity: .45; cursor: not-allowed; }
+  .net-card textarea {
+    width: 100%; height: 84px; resize: vertical; margin: 4px 0 8px;
+    padding: 8px 10px; border-radius: 10px; font-size: 11px; line-height: 1.4;
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    background: rgba(255,255,255,.05); color: #cfe6ff;
+    border: 1px solid rgba(255,255,255,.14);
+  }
+  .net-label { font-size: 12px; color: #9aa7b4; margin-top: 6px; }
+  .net-status {
+    margin-top: 8px; padding: 8px 10px; border-radius: 10px;
+    background: rgba(94,234,212,.08); border: 1px solid rgba(94,234,212,.25);
+    color: #b8fff0; font-size: 12px; min-height: 34px;
+  }
+  .net-step { display: none; }
+  .net-step.on { display: block; }
+
+  /* 房间列表 */
+  .net-input {
+    flex: 1 1 160px; min-width: 120px;
+    padding: 9px 12px; border-radius: 22px; font-size: 12px;
+    background: rgba(255,255,255,.05); color: #cfe6ff;
+    border: 1px solid rgba(255,255,255,.16); outline: none;
+  }
+  .net-input:focus { border-color: rgba(94,234,212,.6); }
+  .net-hint {
+    margin: 8px 0; padding: 9px 12px; border-radius: 10px; font-size: 12px; line-height: 1.7;
+    background: rgba(255,196,84,.10); border: 1px solid rgba(255,196,84,.35); color: #ffd79a;
+  }
+  .net-hint b { color: #ffe9bf; }
+  .net-rooms {
+    margin: 6px 0 4px; padding: 8px 10px; border-radius: 10px;
+    background: rgba(255,255,255,.035); border: 1px solid rgba(255,255,255,.10);
+    font-size: 12px; color: #9aa7b4; min-height: 46px;
+  }
+  .net-room {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    padding: 7px 4px; border-bottom: 1px dashed rgba(255,255,255,.08);
+  }
+  .net-room:last-child { border-bottom: none; }
+  .net-room .rn { color: #e8ecf5; font-weight: 700; }
+  .net-room .rm { color: #7f8b9c; font-size: 11px; }
+  .net-room button {
+    padding: 6px 14px; border-radius: 16px; font-size: 12px; flex: 0 0 auto;
+  }
+
+  /* ===== 结算面板 ===== */
+  #overlay {
+    position: fixed; inset: 0; z-index: 20;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(3,5,12,.72); backdrop-filter: blur(6px);
+  }
+  #overlay.hidden { display: none; }
+  .ov-card {
+    text-align: center; padding: 28px 40px; border-radius: 20px;
+    background: rgba(13,17,32,.95); border: 1px solid rgba(255,255,255,.12);
+    box-shadow: 0 20px 60px rgba(0,0,0,.6);
+  }
+  .ov-title { font-size: 26px; font-weight: 800; margin-bottom: 8px; }
+  .ov-sub { font-size: 14px; color: #8a93a6; margin-bottom: 20px; }
+  #sideConfirmBtn {
+    cursor: pointer; padding: 11px 34px; font-size: 15px; font-weight: 700;
+    border-radius: 26px; border: none; color: #070912;
+    background: linear-gradient(90deg, #4fc3ff, #ff5c8a);
+  }
+  .skill {
+    font-size: 11px; color: #8a93a6; margin-top: 2px;
+    letter-spacing: .5px; min-height: 15px;
+  }
+  .player.left .skill { text-align: left; }
+  .player.right .skill { text-align: right; }
+</style>
+</head>
+<body>
+  <h1>小 球 竞 技 场</h1>
+
+  <div id="topbar">
+    <div class="player left">
+      <div class="row">
+        <span class="pname" id="pname0">蓝方</span>
+        <span class="teamHpTotal"><span class="hpNum" id="hpNum0">100 / 100</span></span>
+      </div>
+      <div class="teamHpTotal hpWrap"><div class="hp-fill" id="hp0" style="background:#4fc3ff"></div></div>
+      <div class="teamHpRows" id="teamHpRows0">
+        <div class="ballHpRow" id="ballHpRow0"><div class="ballHpHead"><span class="ballHpName" id="ballHpName0"></span><span class="ballHpNum" id="ballHpNum0"></span></div><div class="hpWrap"><div class="hp-fill" id="ballHp0"></div></div></div>
+        <div class="ballHpRow" id="ballHpRow2"><div class="ballHpHead"><span class="ballHpName" id="ballHpName2"></span><span class="ballHpNum" id="ballHpNum2"></span></div><div class="hpWrap"><div class="hp-fill" id="ballHp2"></div></div></div>
+      </div>
+      <div class="skill" id="skill0">散射齐射</div>
+    </div>
+    <span class="vs">VS</span>
+    <div class="player right">
+      <div class="row">
+        <span class="pname" id="pname1">粉方</span>
+        <span class="teamHpTotal"><span class="hpNum" id="hpNum1">100 / 100</span></span>
+      </div>
+      <div class="teamHpTotal hpWrap"><div class="hp-fill" id="hp1" style="background:#ff6b9d"></div></div>
+      <div class="teamHpRows" id="teamHpRows1">
+        <div class="ballHpRow" id="ballHpRow1"><div class="ballHpHead"><span class="ballHpName" id="ballHpName1"></span><span class="ballHpNum" id="ballHpNum1"></span></div><div class="hpWrap"><div class="hp-fill" id="ballHp1"></div></div></div>
+        <div class="ballHpRow" id="ballHpRow3"><div class="ballHpHead"><span class="ballHpName" id="ballHpName3"></span><span class="ballHpNum" id="ballHpNum3"></span></div><div class="hpWrap"><div class="hp-fill" id="ballHp3"></div></div></div>
+      </div>
+      <div class="skill" id="skill1">散射齐射</div>
+    </div>
+  </div>
+
+  <div id="wrap">
+    <canvas id="cv" width="600" height="600"></canvas>
+  </div>
+
+  <div id="rolePanels">
+    <div class="rp-head">选择身份</div>
+    <div class="rp-body">
+      <div class="rp-col">
+        <div class="rp-side rp-side0">蓝方</div>
+        <div class="rp-pick">
+          <div class="rp-pick-title">队员 1</div>
+          <div class="role-list" id="roles0"></div>
+        </div>
+        <div class="rp-pick extra">
+          <div class="rp-pick-title">队员 2</div>
+          <div class="role-list" id="roles2"></div>
+        </div>
+      </div>
+      <div class="rp-col">
+        <div class="rp-side rp-side1" id="sideLabel1">粉方</div>
+        <div class="rp-pick">
+          <div class="rp-pick-title">队员 1</div>
+          <div class="role-list" id="roles1"></div>
+        </div>
+        <div class="rp-pick extra">
+          <div class="rp-pick-title">队员 2</div>
+          <div class="role-list" id="roles3"></div>
+        </div>
+        <!-- BOSS 战专用：BOSS 选择列表（平时隐藏） -->
+        <div class="rp-boss">
+          <div class="rp-pick-title">BOSS</div>
+          <div class="role-list" id="bossRoles"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="ctrlBar">
+    <button id="ctrlBtn" class="start">开始</button>
+    <button id="delayBtn" class="start">延时 5 秒开始</button>
+    <button id="modeBtn" type="button" aria-pressed="false">2v2</button>
+    <button id="bossBtn" type="button" aria-pressed="false">BOSS战</button>
+    <button id="netBtn" type="button">联机</button>
+  </div>
+
+  <div id="netPanel" class="hidden">
+    <div class="net-card">
+      <h3>联机（1v1）</h3>
+      <p>两种方式：<b>房间列表</b>（走公共 MQTT，不用注册也不用部署，开房后房客在列表里点「加入」）或
+         <b>复制粘贴配对码</b>（完全不需要网络服务）。对局数据始终是两端 WebRTC 直连，
+         已配国内可用的 STUN，同一 Wi‑Fi 走内网直连；不同网络也能尝试直连（严格 NAT 需要 TURN）。</p>
+
+      <div id="netFileHint" class="net-hint hidden">
+        当前页面是<b>本地文件</b>打开的，浏览器会禁止联网连接，所以房间列表不可用。
+        请直接用下面「<b>我是房主（手动）</b>」的配对码方式联机（这种方式不需要任何服务器）。
+      </div>
+
+      <div id="netSigBox">
+      <!-- ===== 房间列表（公共 MQTT） ===== -->
+      <div class="net-label">MQTT 地址（默认公共 broker，一般不用改）</div>
+      <div class="net-row">
+        <input id="netSigUrl" class="net-input" type="text" placeholder="wss://broker.emqx.io:8084/mqtt">
+        <button id="netSigConnBtn">连接</button>
+        <button id="netSigRefreshBtn" class="ghost">刷新列表</button>
+      </div>
+      <div class="net-row">
+        <input id="netRoomName" class="net-input" type="text" placeholder="房间名（默认：我的房间）">
+        <button id="netCreateRoomBtn">开房间</button>
+      </div>
+      <div id="netRoomList" class="net-rooms">未连接信令服务</div>
+      </div>
+
+      <!-- ===== 手动配对（兜底） ===== -->
+      <div class="net-row" style="margin-top:14px">
+        <button id="netHostBtn" class="ghost">我是房主（手动）</button>
+        <button id="netGuestBtn" class="ghost">我是房客（手动）</button>
+        <button id="netDisconnectBtn" class="ghost">断开连接</button>
+        <button id="netCloseBtn" class="ghost">关闭</button>
+      </div>
+
+      <!-- 房主流程 -->
+      <div id="netHostStep" class="net-step">
+        <div class="net-label">① 生成邀请码，发给房客</div>
+        <textarea id="netOfferOut" readonly placeholder="点下面的按钮生成…"></textarea>
+        <div class="net-row">
+          <button id="netMakeOfferBtn">生成邀请码</button>
+          <button id="netCopyOfferBtn" class="ghost">复制邀请码</button>
+        </div>
+        <div class="net-label">② 粘贴房客发回来的应答码</div>
+        <textarea id="netAnswerIn" placeholder="在这里粘贴房客的应答码…"></textarea>
+        <div class="net-row">
+          <button id="netApplyAnswerBtn">连接</button>
+        </div>
+      </div>
+
+      <!-- 房客流程 -->
+      <div id="netGuestStep" class="net-step">
+        <div class="net-label">① 粘贴房主发来的邀请码</div>
+        <textarea id="netOfferIn" placeholder="在这里粘贴房主的邀请码…"></textarea>
+        <div class="net-row">
+          <button id="netMakeAnswerBtn">生成应答码</button>
+        </div>
+        <div class="net-label">② 把这段应答码发回给房主</div>
+        <textarea id="netAnswerOut" readonly placeholder="生成后出现在这里…"></textarea>
+        <div class="net-row">
+          <button id="netCopyAnswerBtn" class="ghost">复制应答码</button>
+        </div>
+      </div>
+
+      <div id="netStatus" class="net-status">未连接</div>
+    </div>
+  </div>
+
+  <div id="overlay" class="hidden">
+    <div class="ov-card">
+      <div class="ov-title">对局结束</div>
+      <div class="ov-sub">一方已被击败</div>
+      <button id="sideConfirmBtn">再来一局</button>
+    </div>
+  </div>
+
+<script>
+"use strict";
+/* ============ 常量 ============ */
+var W = 600, H = 600;
+var ARENA = { x: 60, y: 60, size: 480, thickness: 4 };
+var BALL_R = 16;
+var BULLET_R = 5;
+var MAX_HP = 100;
+var BALL_SPEED = 3.4;
+var BULLET_SPEED = 5;
+var SKILL_CD = 1.4;
+var ROLE_HOOK_SPIN = 5.0;   // 舰长旋转持续秒数
+var ROLE_HOOK_COOLDOWN = 15.0; // 钩中结束后船锚冷却
+var ROLE_HOOK_ORBIT_RADIUS = 121;  // 船锚待机旋转半径
+var ROLE_HOOK_ORBIT_SPEED = 6.2;   // 船锚待机旋转速度（弧度/秒）
+var ROLE_HOOK_COLLISION_RADIUS = BALL_R + 18;
+var ROLE_HOOK_DMG_MIN = 5;  // 船锚钩中或碰墙伤害下限
+var ROLE_HOOK_DMG_MAX = 10;  // 船锚钩中或碰墙伤害上限
+var ROLE_HOOK_HITS = 5;     // 钩中期间最多碰墙次数
+// 吸血舰长：舰长同款船锚，伤害更低但每次造成伤害都按比例回血
+var ROLE_HOOKVAMP_DMG_MIN = 4;   // 钩中/碰墙伤害下限
+var ROLE_HOOKVAMP_DMG_MAX = 8;   // 钩中/碰墙伤害上限
+var ROLE_HOOKVAMP_LIFESTEAL = 1; // 吸血比例（1 = 造成多少回多少，上限为自身最大血量）
+var ROLE_GUN_CD = 10.0;     // 霰弹枪手开火冷却
+var ROLE_GUN_COUNT = 10;    // 一次同时射出的子弹数
+var ROLE_GUN_DMG_MIN = 8;   // 每发伤害下限
+var ROLE_GUN_DMG_MAX = 12;  // 每发伤害上限
+var ROLE_GUN_SPREAD = 90 * Math.PI / 180;   // 扇形张角（扇形朝向随机方向）
+var ROLE_GUNNER_CD = 5.0;  // 枪手发射冷却
+var ROLE_GUNNER_RICO = 9999;  // 枪手子弹反弹次数上限（9999 视为无限反弹，不打到人就不消失）
+
+var ROLE_COWBOY_CD = 10.0;       // 牛仔齐射冷却（秒）
+var ROLE_COWBOY_SHOTS = 6;       // 牛仔每次发射的子弹数
+var ROLE_COWBOY_PAUSE = 0.3;    // 牛仔齐射逐发间隔（秒）
+var ROLE_COWBOY_RICO = 1;        // 牛仔子弹反弹次数上限
+var ROLE_COWBOY_DMG_MIN = 5;     // 牛仔单发伤害下限
+var ROLE_COWBOY_DMG_MAX = 12;    // 牛仔单发伤害上限
+var ROLE_COWBOY_SPREAD = 0.7;    // 牛仔 6 发扇形总张角（弧度）
+var ROLE_GUNNER_DMG_MIN = 5;
+var ROLE_GUNNER_DMG_MAX = 12;
+var ROLE_SHIELD_HP = 150;   // 盾兵血量上限
+var ROLE_SHIELD_CD = 1.2;    // 盾兵重撞冷却
+var ROLE_SHIELD_BUMP = 10;  // 盾兵贴脸伤害
+var ROLE_DISPATCHER_CD = 20.0; // 调度员列车召唤冷却
+var ROLE_TRAIN_SPEED = 4.5;   // 每帧移动像素
+var ROLE_TRAIN_LENGTH = ARENA.size;
+var ROLE_TRAIN_V2_LENGTH = ARENA.size - 48;
+var ROLE_TRAIN_WIDTH = 32;
+var ROLE_DYN_CD = 10.0;     // 爆破手投掷冷却（秒）
+var ROLE_DYN_FUSE = 1.6;    // 炸药引信（秒）
+var ROLE_DYN_DMG = 35;      // 炸药爆炸伤害
+var ROLE_DYN_RADIUS = 120;  // 爆炸半径（像素）
+var ROLE_DYN_SPEED = 5.2;   // 炸药飞行速度
+var ROLE_VAMPIRE_DMG_MIN = 6;  // 吸血鬼单次贴身最低伤害
+var ROLE_VAMPIRE_DMG_MAX = 16; // 吸血鬼单次贴身最高伤害
+var ROLE_VAMPIRE_LOCK = 1.5;   // 吸血鬼吸血冷却（秒），乱弹后避免贴着连续暴击
+var ROLE_GHOST_CD = 10.0;      // 幽灵技能冷却（秒）
+var ROLE_GHOST_WARP = 5.0;     // 受击触发后的免伤持续时长（秒）
+var ROLE_GHOST_RETURN = 1.5;   // 累计伤害返还比例
+var ROLE_GHOST_RICO = 3;       // 返还子弹撞墙反弹次数
+var ROLE_MEDIC_CD = 10.0;
+var ROLE_MEDIC_CHARGE = 5.0;
+var ROLE_MEDIC_HEAL = 1.5;
+var ROLE_MEDIC_RICO = 3;
+// 医者复活：队友阵亡后蓄力 30 秒，结束时半血复活（每局只能用一次）
+var ROLE_MEDIC_REVIVE_CHARGE = 30.0;   // 复活蓄力时长（秒）
+var ROLE_MEDIC_REVIVE_RATIO = 0.5;     // 复活后恢复的血量比例（最大血量的一半）
+var ROLE_MATH_CD = 15.0;
+var ROLE_MATH_CHARGE = 5.0;
+var ROLE_MATH_RICO = 3;
+var ROLE_MATH_POWER_CHANCE = 0.03;
+var ROLE_MATH_POWER_LIMIT = 1000;
+// 爆破数学家：数学家同款算式蓄力 + 爆破手同款炸药
+var ROLE_DYNMATH_CD = 15.0;                        // 技能冷却（秒）
+var ROLE_DYNMATH_CHARGE = 5.0;                     // 算式蓄力（秒）
+var ROLE_DYNMATH_RADIUS = ROLE_DYN_RADIUS;         // 爆炸半径，与爆破手一致（120px）
+var ROLE_DYNMATH_FUSE = ROLE_DYN_FUSE;             // 炸药引信，与爆破手一致（1.6 秒）
+var ROLE_DYNMATH_SPEED = ROLE_DYN_SPEED;           // 炸药飞行速度，与爆破手一致
+// 爆破数学家V2：伤害固定，爆炸半径由算式结果决定
+var ROLE_DYNMATH2_DMG = 40;              // 固定伤害
+var ROLE_DYNMATH2_RADIUS_BASE = 96;      // 半径基数（px）
+var ROLE_DYNMATH2_RADIUS_SCALE = 0.2;    // 每 1 点算式结果增加的半径
+var ROLE_DYNMATH2_RADIUS_MIN = 40;       // 半径下限（px）
+var ROLE_DYNMATH2_RADIUS_MAX = 480;      // 半径上限（px，等于擂台边长）
+// 物理学家：20 秒冷却随机触发三种场域之一，各持续 5 秒
+var ROLE_PHYS_CD = 20.0;           // 技能冷却（秒）
+var ROLE_PHYS_DURATION = 5.0;      // 每个场域持续时间（秒）
+var ROLE_PHYS_FIELD_SIDE = 215;    // 技能1 电场方形边长（面积 ≈ 擂台 1/5）
+var ROLE_PHYS_FIELD_DPS = 8;       // 技能1 电场每秒伤害
+var ROLE_PHYS_FIELD_TICK = 0.5;    // 技能1 伤害结算间隔（秒）
+var ROLE_PHYS_MAGNET_ACCEL = 0.45; // 技能1 电磁铁对子弹的吸引加速度（每帧）
+var ROLE_PHYS_MAGNET_MAX_SPEED = 7; // 技能1 被吸子弹的速度上限
+var ROLE_PHYS_GRAVITY_UNIT = 7;    // 技能2 每 7px 距离造成 1 伤害
+var ROLE_PHYS_GRAVITY_PUSH = 4.6;  // 技能2 推向墙壁的速度
+var ROLE_PHYS_LASER_DMG = 5;       // 技能3 每次穿过光线的伤害
+var ROLE_PHYS_MIRRORS = 4;         // 技能3 平面镜数量
+var ROLE_PHYS_MIRROR_LEN = 90;     // 技能3 镜面长度（px）
+var ROLE_PHYS_RAY_BOUNCES = 12;    // 技能3 单条光线最大反射次数
+// 病毒：每 15 秒随机放 2 个病毒罐，敌方累计第 x 次碰罐吃 3 次 x 伤害
+var ROLE_VIRUS_CD = 15.0;              // 放罐冷却（秒）
+var ROLE_VIRUS_JARS = 2;               // 每次放置数量
+var ROLE_VIRUS_JAR_HITS = 1;           // 每个罐子被碰几次后破碎（1 = 一碰就消失）
+var ROLE_VIRUS_JAR_R = 13;             // 罐子半径（px）
+var ROLE_VIRUS_JAR_TOUCH_CD = 0.6;     // 同一个球对同一个罐的触碰冷却（秒）
+var ROLE_VIRUS_DMG_TICKS = 3;          // 分几次结算
+var ROLE_VIRUS_TICK_INTERVAL = 1.0;    // 每次结算间隔（秒）
+// 保安：无冷却，碰墙拉线，敌方穿线受伤
+var ROLE_GUARD_LINE_DMG = 3;           // 穿过警戒线的伤害
+var ROLE_GUARD_WALL_LOCK = 0.2;        // 两次记录端点之间的最短间隔（秒），避免贴着墙连续触发
+// BOSS 分裂者：满血就分裂，分裂后短暂不能回血
+var ROLE_SPLIT_REGEN_INTERVAL = 2.0;   // 每 2 秒回一次血
+var ROLE_SPLIT_REGEN_AMOUNT = 5;       // 每次回复量
+var ROLE_SPLIT_INTERVAL = 15.0;        // 分裂判定周期（全场统一判定，不看球的数量）
+var ROLE_SPLIT_NO_REGEN = 5.0;         // 分裂后不可回血时长（秒）
+var ROLE_SPLIT_BUMP_DMG = 3;           // 分裂体撞击敌方的伤害
+var ROLE_SPLIT_BUMP_LOCK = 0.4;        // 撞击伤害锁（秒）
+var ROLE_SPLIT_MAX_BALLS = 64;         // 纯技术保护：球数超过这个值就不再分裂，避免页面卡死
+
+var ROLES = [
+  { name: '霰弹枪手', color: '#4fc3ff', desc: '每10秒朝敌方喷90°扇形10颗·8~12伤', maxHp: MAX_HP,
+    role: 'gun', ai: 'keep', skillName: '扇形霰射',
+    skillDesc: '每 10 秒同时射出 10 颗子弹：扇形整体朝向最近的敌人（张角 90°），每颗子弹在这个 90° 内随机偏转；每颗造成 8~12 随机伤害，子弹不反弹、飞行 2.6 秒后消失' },
+  { name: '舰长', color: '#1f9ea8', desc: '121px旋转船锚·碰撞钩中·5~10伤', maxHp: 50,
+    role: 'hook', ai: 'keep', skillName: '旋转船锚', skillDesc: '船锚绕舰长以 121px 半径旋转；碰到敌人造成 5~10 伤害并拖拽 5 秒，钩住期间碰墙反弹并造成 5~10 伤害，最多碰墙 5 次，结束后冷却 15 秒' },
+  { name: '吸血舰长', color: '#ff2d6f', gradient: ['#ff2d6f', '#ff7a8a', '#8f7ad8', '#1f9ea8'], desc: '红蓝渐变·船锚4~8伤·全额吸血',
+    maxHp: 50, role: 'hook', ai: 'keep', skillName: '吸血船锚',
+    hookDmgMin: ROLE_HOOKVAMP_DMG_MIN, hookDmgMax: ROLE_HOOKVAMP_DMG_MAX,
+    hookLifesteal: ROLE_HOOKVAMP_LIFESTEAL,
+    skillDesc: '船锚绕自身以 121px 半径旋转；碰到敌人造成 4~8 伤害并拖拽 5 秒，钩住期间碰墙反弹并造成 4~8 伤害，最多碰墙 5 次；每次造成伤害都按同等数值回复自身生命（不超过 50 上限），结束后冷却 15 秒' },
+  { name: '盾兵', color: '#c99a3f', desc: '150血·贴脸10伤', maxHp: ROLE_SHIELD_HP,
+    role: 'shield', ai: 'keep', skillName: '重撞', skillDesc: '本体撞击造成 10 伤害' },
+  { name: '爆破手', color: '#ff8a3d', desc: '每10秒朝敌方投炸药·爆炸35伤·120px范围', maxHp: MAX_HP,
+    role: 'dynamite', ai: 'keep', skillName: '投掷炸药', cd: 10, dynDmg: 35,
+    skillDesc: '每 10 秒朝敌方掷出一枚炸药，引信 1.6 秒，120px 内爆炸造成 35 伤害' },
+  { name: '爆破手V2', color: '#ff5c4a', desc: '每5秒朝敌方投炸药·爆炸35伤·120px范围', maxHp: MAX_HP,
+    role: 'dynamite', ai: 'keep', skillName: '投掷炸药', cd: 5, dynDmg: 35,
+    skillDesc: '每 5 秒朝敌方掷出一枚炸药，引信 1.6 秒，120px 内爆炸造成 35 伤害' },
+  { name: '爆破手V3', color: '#b87dff', desc: '每10秒朝敌方投炸药·爆炸60伤·120px范围', maxHp: MAX_HP,
+    role: 'dynamite', ai: 'keep', skillName: '重爆炸药', cd: 10, dynDmg: 60,
+    skillDesc: '每 10 秒朝敌方掷出一枚高爆炸药，引信 1.6 秒，120px 内爆炸造成 60 伤害' },
+  { name: '吸血鬼', color: '#ff2d6f', desc: '贴身6~16伤·吸回等量血量', maxHp: MAX_HP,
+    role: 'vampire', ai: 'keep', skillName: '吸血撕咬',
+    skillDesc: '每次贴到敌方造成 6~16 伤害，并回复自身等量生命' },
+  { name: '枪手', color: '#7cff5e', desc: '每5秒射1发·可撞墙反弹·5~12伤', maxHp: MAX_HP,
+    role: 'gunner', ai: 'keep', skillName: '反弹弹幕',
+    skillDesc: '每 5 秒朝敌方射出 1 发子弹，无限反弹直至命中，每发 5~12 伤害' },
+  { name: '牛仔', color: '#c9a24b', desc: '每10秒齐射6发·可撞墙反弹1次·5~12伤', maxHp: MAX_HP,
+    role: 'cowboy', ai: 'keep', skillName: '六连齐射',
+    skillDesc: '每 10 秒向敌方齐射 6 发子弹，发射时自身停止移动，每发可撞墙反弹 1 次、造成 5~12 伤害' },
+  { name: '幽灵', color: '#9be7ff', desc: '10秒冷却·受击后减伤5秒并反弹150%伤害', maxHp: MAX_HP,
+    role: 'ghost', ai: 'keep', skillName: '相位反击',
+    skillDesc: '冷却 10 秒；冷却结束后受到伤害时触发 5 秒减伤，期间只承受 50% 伤害，并在结束后以实际承受伤害的 150% 化为一发可撞墙反弹 3 次的子弹' },
+  { name: '医者', color: '#67e8a5', desc: '仅限2v2·回血弹·队友阵亡可复活一次', maxHp: MAX_HP,
+    role: 'medic', ai: 'keep', skillName: '援护治疗',
+    skillDesc: '仅限 2v2：冷却 10 秒；冷却结束后队友造成伤害时触发 5 秒蓄力，累计其实际造成伤害的 150%，再向队友发射可反弹 3 次的治疗弹（不能治疗自己）。复活（每局一次）：队友阵亡时进入 30 秒蓄力，期间不能发治疗弹，蓄力结束时把队友在原地以半血复活；医者若在蓄力中阵亡则蓄力中断' },
+  { name: '数学家', color: '#f0d66d', desc: '15秒冷却·5秒算式蓄力·反弹3次', maxHp: MAX_HP,
+    role: 'mathematician', ai: 'keep', skillName: '概率算式',
+    skillDesc: '冷却 15 秒后进行 5 秒蓄力，随机生成三个 1~10 的数与两个运算符，按从左到右计算，将结果作为可反弹 3 次的子弹伤害；乘方低概率出现且乘方结果上限 1000，负数或 0 不造成伤害' },
+  { name: '爆破数学家', color: '#e05fd1', desc: '15秒冷却·5秒算式蓄力·算式伤害炸药', maxHp: MAX_HP,
+    role: 'dynmath', ai: 'keep', skillName: '算式爆破',
+    skillDesc: '冷却 15 秒后进行 5 秒算式蓄力（三个 1~10 的数与两个运算符、从左到右计算、乘方结果上限 1000），把算式结果作为炸药伤害朝敌方掷出；引信 1.6 秒，120px 内爆炸，结果 ≤ 0 时不造成伤害' },
+  { name: '爆破数学家V2', color: '#a83fd1', desc: '固定40伤·爆炸半径随算式浮动', maxHp: MAX_HP,
+    role: 'dynmath', ai: 'keep', skillName: '算式爆破·改',
+    dynMathDamage: ROLE_DYNMATH2_DMG,
+    dynMathRadiusBase: ROLE_DYNMATH2_RADIUS_BASE,
+    dynMathRadiusScale: ROLE_DYNMATH2_RADIUS_SCALE,
+    dynMathRadiusMin: ROLE_DYNMATH2_RADIUS_MIN,
+    dynMathRadiusMax: ROLE_DYNMATH2_RADIUS_MAX,
+    skillDesc: '冷却 15 秒后进行 5 秒算式蓄力；伤害固定 40，爆炸半径 = 96px + 算式结果 × 0.2（限制在 40~480px）；引信 1.6 秒，算式结果只影响范围不影响伤害' },
+  { name: '物理学家', color: '#22d3ee', desc: '20秒冷却·随机电场/引力/光路·各5秒', maxHp: MAX_HP,
+    role: 'physicist', ai: 'keep', skillName: '随机场域',
+    skillDesc: '冷却 20 秒随机触发以下场域之一，各持续 5 秒：① 边长 215px 的电场，敌方在电场内每秒受 8 伤，场心电磁铁会把进入电场的所有子弹吸走；② 上下左右随机一个方向的引力场，把所有敌方扔向该侧墙壁，伤害 = 距该墙距离 ÷ 7；③ 四角向中心的激光笔 + 四块随机双面平面镜组成光路，敌方每次穿过光线受 5 伤' },
+  { name: '病毒', color: '#a6e22e', desc: '每15秒放2个病毒罐·连吃三段伤害', maxHp: MAX_HP,
+    role: 'virus', ai: 'keep', skillName: '病毒罐',
+    skillDesc: '每 15 秒在场地随机位置放置 2 个病毒罐；敌方第 x 次碰到病毒罐（按自身累计触碰次数计，跨罐累计）时，受到 3 次间隔 1 秒的 x 点伤害；病毒罐一碰即碎，且只对敌方生效' },
+  { name: '保安', color: '#7c8cff', desc: '无冷却·撞墙拉警戒线·穿线3伤', maxHp: MAX_HP,
+    role: 'guard', ai: 'keep', skillName: '警戒线',
+    skillDesc: '没有冷却：撞墙时在墙面钉下一个端点并开始拉线；再次撞墙时把另一端钉到那面墙上，完成一条警戒线（这次撞墙不再拉新线）。敌方每次穿过警戒线受 3 伤；已完成的线永久保留、不设上限' },
+  { name: '调度员', color: '#ffd166', desc: '每20秒召唤4辆火车·碰撞反弹并造成5~10伤', maxHp: MAX_HP,
+    role: 'dispatcher', ai: 'keep', skillName: '列车调度',
+    trainDmgMin: 5, trainDmgMax: 10, trainLength: ROLE_TRAIN_LENGTH,
+    skillDesc: '每 20 秒召唤 2 辆纵向火车和 2 辆横向火车；撞到小球会使其反弹，敌方每次碰撞受到 5~10 随机伤害' },
+  { name: '调度员V2', color: '#ff9f43', desc: '短列车·每次碰撞造成10~15伤', maxHp: MAX_HP,
+    role: 'dispatcher', ai: 'keep', skillName: '强化列车调度',
+    trainDmgMin: 10, trainDmgMax: 15, trainLength: ROLE_TRAIN_V2_LENGTH,
+    skillDesc: '每 20 秒召唤 2 辆纵向火车和 2 辆横向短列车；撞到小球会使其反弹，敌方每次碰撞受到 10~15 随机伤害' },
+  // ===== BOSS 专属角色：不出现在身份选择列表里，只在 BOSS 战中由系统指定 =====
+  { name: '舰长³', color: '#ff4d6d', gradient: ['#ff4d6d', '#ff8f6b', '#c1121f'], bossOnly: true,
+    desc: 'BOSS·三船锚 120° 均分', maxHp: 150, role: 'hook', ai: 'keep', hookCount: 3,
+    skillName: '三重船锚',
+    skillDesc: 'BOSS 专属：3 个船锚以 120° 夹角同时绕自身旋转（各自独立钩中、独立冷却），每次钩中或撞墙造成 5~10 伤害' },
+  { name: '分裂者', color: '#7cf5c8', gradient: ['#7cf5c8', '#39c9a8', '#0f766e'], bossOnly: true,
+    desc: 'BOSS·满血每15秒分裂·撞击3伤', maxHp: 50, role: 'splitter', ai: 'keep',
+    skillName: '细胞分裂',
+    regenInterval: ROLE_SPLIT_REGEN_INTERVAL,
+    regenAmount: ROLE_SPLIT_REGEN_AMOUNT,
+    splitInterval: ROLE_SPLIT_INTERVAL,
+    noRegenAfterSplit: ROLE_SPLIT_NO_REGEN,
+    bumpDamage: ROLE_SPLIT_BUMP_DMG,
+    skillDesc: 'BOSS 专属：开局 1 个 50 血球；每 2 秒回复 5 血（上限 50）；每 15 秒做一次分裂判定，所有满血的分裂体各一分为二（各持当前一半血量）；刚分裂出的球 5 秒内不能回血；分裂体撞击敌方造成 3 伤' }
+];
+
+/* ============ 画布 ============ */
+var cv = document.getElementById('cv');
+var ctx = cv.getContext('2d');
+
+/* ============ 状态 ============ */
+var running = false;
+var finished = false;
+var teamMode = false;
+var bossMode = false;          // BOSS 战：2 个蓝队球 vs 1 个 BOSS 球（index 1）
+var BOSS_ROLE_INDEX = -1;      // ROLES 里第一个 bossOnly 角色的下标，启动时算出来
+var selectedBoss = -1;         // 当前选中的 BOSS（清单里的下标），默认第一个
+var savedSelected1 = 0;        // 进出 BOSS 战时暂存的粉方选择
+var selected = [0, 0, 0, 0];
+var hp = [MAX_HP, MAX_HP];
+var balls = [ mkBall(0), mkBall(1) ];
+var bullets = [];
+var particles = [];
+var floatTexts = [];
+var cd = [0, 0];              // 通用技能冷却
+var hook = [ null, null ];      // 舰长钩子状态
+var bumpLock = [0, 0];          // 近战伤害锁
+var dynamites = [];          // 爆破手炸药：{ owner, x, y, vx, vy, fuse, fuseMax, r }
+var trains = [];
+var physFields = [];         // 物理学家场域：{ owner, team, kind, t, ... }
+var virusJars = [];          // 病毒罐：{ owner, team, x, y, r, color, hits, cool }
+var virusDots = [];          // 病毒延迟伤害：{ target, owner, dmg, ticks, next }
+var guardLines = [];         // 保安警戒线：{ owner, team, x1, y1, x2, y2 }
+var ballPrevPos = [];        // 上一帧的球位置，用于“穿线”判定
+var bossSplitT = ROLE_SPLIT_INTERVAL;  // BOSS 分裂者的全场分裂倒计时
+var previewT = 0;
+var spawnT = 0;
+var previewPositions = [];
+var lastTime = 0;
+var rafId = null;
+var globalTime = 0;              // 累计运行时间（秒），驱动常驻船锚公转/自转
+
+/* ============ 工具 ============ */
+function rand(a, b) { return a + Math.random() * (b - a); }
+function shade(hex, amt) {
+  var c = hex.replace('#', '');
+  var r = parseInt(c.substr(0, 2), 16);
+  var g = parseInt(c.substr(2, 2), 16);
+  var b = parseInt(c.substr(4, 2), 16);
+  r = Math.max(0, Math.min(255, r + r * amt));
+  g = Math.max(0, Math.min(255, g + g * amt));
+  b = Math.max(0, Math.min(255, b + b * amt));
+  return 'rgb(' + (r | 0) + ',' + (g | 0) + ',' + (b | 0) + ')';
+}
+function glowOf(hex) {
+  var c = hex.replace('#', '');
+  var r = parseInt(c.substr(0, 2), 16);
+  var g = parseInt(c.substr(2, 2), 16);
+  var bb = parseInt(c.substr(4, 2), 16);
+  return 'rgba(' + r + ',' + g + ',' + bb + ',.5)';
+}
+function clampSpeed(b) {
+  var sp = Math.hypot(b.vx, b.vy);
+  if (sp > 0) {
+    b.vx = b.vx / sp * BALL_SPEED;
+    b.vy = b.vy / sp * BALL_SPEED;
+  }
+}
+function activeBallCount() { return bossMode ? 3 : (teamMode ? 4 : 2); }
+// BOSS 队的实际球数（分裂者会不断追加分裂体，所以以 balls.length 为准）
+function ballCount() { return balls.length; }
+function teamOf(index) {
+  // BOSS 战：0/2 号是蓝队；1 号是 BOSS 本体，3 号往后都是分裂体，同属 BOSS 队
+  if (bossMode) return (index === 0 || index === 2) ? 0 : 1;
+  return teamMode ? index % 2 : index;
+}
+function teammateOf(index) {
+  if (bossMode) {
+    if (index === 0) return 2;
+    if (index === 2) return 0;
+    return -1;                       // BOSS 队不算“队友”（治疗弹不给分裂体）
+  }
+  return teamMode ? index + (index < 2 ? 2 : -2) : -1;
+}
+function findEnemy(owner) {
+  var target = -1, closest = Infinity;
+  for (var i = 0; i < balls.length; i++) {
+    if (teamOf(i) === teamOf(owner) || hp[i] <= 0) continue;
+    var distance = Math.hypot(balls[i].x - balls[owner].x, balls[i].y - balls[owner].y);
+    if (distance < closest) { closest = distance; target = i; }
+  }
+  return target;
+}
+function isHookedBall(index) {
+  var found = false;
+  eachHook(function (h) {
+    if (found) return;
+    if (!h.released && h.hooked && h.target === index) found = true;
+  });
+  return found;
+}
+function teamHealth(team) {
+  var current = 0, maximum = 0;
+  for (var i = 0; i < balls.length; i++) {
+    if (teamOf(i) !== team) continue;
+    current += hp[i] || 0;
+    maximum += ROLES[selected[i]].maxHp;
+  }
+  return { current: current, maximum: maximum };
+}
+function teamDefeated(team) {
+  for (var i = 0; i < balls.length; i++) {
+    if (teamOf(i) === team && hp[i] > 0) return false;
+  }
+  return true;
+}
+function easeOutCubic(t) { return 1 - Math.pow(1 - t, 3); }
+function spawnTarget(side) {
+  var cx = ARENA.x + ARENA.size / 2;
+  var cy = ARENA.y + ARENA.size / 2;
+  var team = teamOf(side);
+  var teammateOffset = 0;
+  if (bossMode) {
+    teammateOffset = side === 2 ? -ARENA.size * 0.14 : 0;   // 蓝队 2 号站上一点
+  } else if (teamMode) {
+    teammateOffset = (Math.floor(side / 2) === 0 ? -1 : 1) * ARENA.size * 0.14;
+  }
+  var spread = (teamMode || bossMode) ? 0.04 : 0.16;
+  return {
+    x: cx + (team === 0 ? -1 : 1) * ARENA.size * 0.24,
+    y: cy + teammateOffset + (Math.random() * 2 - 1) * ARENA.size * spread
+  };
+}
+function mkBall(side) {
+  var r = ROLES[selected[side]];
+  var ball = { x: 0, y: 0, vx: 0, vy: 0, color: r.color, glow: glowOf(r.color),
+    gradient: r.gradient || null };
+  if (r.role === 'hook') ball.hookAngle = Math.random() * Math.PI * 2;
+  if (r.role === 'ghost') {
+    ball.ghostPhase = 'cooldown';
+    ball.ghostT = ROLE_GHOST_CD;
+  } else if (r.role === 'medic') {
+    ball.medicPhase = 'cooldown';
+    ball.medicT = ROLE_MEDIC_CD;
+    ball.medicDamage = 0;
+    ball.medicRevivePhase = 'ready';    // 复活技能：ready → charging → used（每局一次）
+    ball.medicReviveT = 0;
+    ball.medicReviveTarget = -1;
+  } else if (r.role === 'mathematician') {
+    ball.mathPhase = 'cooldown';
+    ball.mathT = ROLE_MATH_CD;
+    ball.mathExpression = null;
+  } else if (r.role === 'dynmath') {
+    ball.dynmathPhase = 'cooldown';
+    ball.dynmathT = ROLE_DYNMATH_CD;
+    ball.dynmathExpression = null;
+  } else if (r.role === 'physicist') {
+    ball.physPhase = 'cooldown';
+    ball.physT = ROLE_PHYS_CD;
+    ball.physKind = 0;
+  } else if (r.role === 'virus') {
+    ball.virusHits = 0;
+  } else if (r.role === 'guard') {
+    ball.guardStage = 'idle';
+    ball.guardPoint = null;
+    ball.guardWallLock = 0;
+  } else if (r.role === 'splitter') {
+    ball.splitRegenT = r.regenInterval;
+    ball.splitNoRegenT = 0;
+  }
+  return ball;
+}
+
+/* ============ 身份列表 ============ */
+function buildRoleList(slot) {
+  var box = document.getElementById('roles' + slot);
+  box.innerHTML = '';
+  for (var idx = 0; idx < ROLES.length; idx++) {
+    if (ROLES[idx].bossOnly) continue;          // BOSS 角色不出现在选择列表里
+    (function (idx) {
+      var r = ROLES[idx];
+      var btn = document.createElement('button');
+      btn.className = 'role-btn' + (selected[slot] === idx ? ' selected' : '');
+      btn.setAttribute('data-idx', String(idx));
+      btn.style.color = r.color;
+      btn.innerHTML = '<span class="rdot"></span>'
+                    + '<span class="rname">' + r.name + '</span>'
+                    + '<span class="rdesc">' + r.desc + '</span>';
+      btn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        if (running || finished || (r.role === 'medic' && !teamMode && !bossMode)) return;
+        // 联机房客：只能选粉方（slot 1），选完发给房主，由房主权威应用
+        if (netIsGuest() && slot !== 1) {
+          netStatus('房客只能选粉方角色');
+          return;
+        }
+        selected[slot] = idx;
+        if (balls[slot]) hp[slot] = ROLES[idx].maxHp;
+        if (netIsGuest() && slot === 1) {
+          NET.guestRole = idx;
+          netSend({ t: 'pick', role: idx });
+        }
+        syncRolePickButtons();
+        syncModeButton();
+        syncTopNames();
+        resetMatch();
+        updateHUD();
+        render();
+      });
+      box.appendChild(btn);
+    })(idx);
+  }
+}
+function syncRolePickButtons() {
+  for (var slot = 0; slot < 4; slot++) {
+    var btns = document.getElementById('roles' + slot).querySelectorAll('.role-btn');
+    for (var i = 0; i < btns.length; i++) {
+      var roleIdx = parseInt(btns[i].getAttribute('data-idx'), 10);
+      if (isNaN(roleIdx)) roleIdx = i;
+      btns[i].classList.toggle('selected', roleIdx === selected[slot]);
+      btns[i].disabled = !teamMode && !bossMode && ROLES[roleIdx].role === 'medic';
+    }
+  }
+  syncBossList();
+}
+
+/* ============ BOSS 列表（目前只有一个，仍然做成可选清单，方便以后扩充） ============ */
+function bossRoleIndexes() {
+  var list = [];
+  for (var i = 0; i < ROLES.length; i++) {
+    if (ROLES[i].bossOnly) list.push(i);
+  }
+  return list;
+}
+
+function buildBossList() {
+  var box = document.getElementById('bossRoles');
+  if (!box) return;
+  box.innerHTML = '';
+  var list = bossRoleIndexes();
+  for (var n = 0; n < list.length; n++) {
+    (function (roleIdx) {
+      var r = ROLES[roleIdx];
+      var btn = document.createElement('button');
+      btn.className = 'role-btn' + (selectedBoss === roleIdx ? ' selected' : '');
+      btn.setAttribute('data-idx', String(roleIdx));
+      btn.style.color = r.color;
+      btn.innerHTML = '<span class="rdot"></span>'
+                    + '<span class="rname">' + r.name + ' · ' + r.maxHp + '血</span>'
+                    + '<span class="rdesc">' + r.desc + '</span>';
+      btn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        if (running || finished || delayTimer) return;
+        selectedBoss = roleIdx;
+        if (bossMode) {
+          selected[1] = roleIdx;
+          resetMatch();
+        }
+        syncRolePickButtons();
+        syncTopNames();
+        updateHUD();
+        render();
+      });
+      box.appendChild(btn);
+    })(list[n]);
+  }
+  syncBossList();
+}
+
+function syncBossList() {
+  var box = document.getElementById('bossRoles');
+  if (!box) return;
+  var btns = box.querySelectorAll('.role-btn');
+  for (var i = 0; i < btns.length; i++) {
+    var roleIdx = parseInt(btns[i].getAttribute('data-idx'), 10);
+    btns[i].classList.toggle('selected', roleIdx === selectedBoss);
+    btns[i].disabled = running || finished;
+  }
+}
+function syncModeButton() {
+  var medicInBlue = ROLES[selected[0]].role === 'medic' || ROLES[selected[2]].role === 'medic';
+  var medicInPink = ROLES[selected[1]].role === 'medic';
+  // 1v1 不能带医者；BOSS 战里 BOSS 那一格是固定的，不用管
+  var restricted = bossMode ? false : (medicInBlue || medicInPink);
+  modeBtn.disabled = restricted || bossMode;
+  modeBtn.title = restricted ? '1v1 不可使用医者，请先切换为其他角色'
+    : bossMode ? 'BOSS 战进行中，先退出 BOSS 战' : '';
+  if (typeof bossBtn !== 'undefined' && bossBtn) bossBtn.disabled = false;
+}
+function syncTopNames() {
+  for (var team = 0; team < 2; team++) {
+    var roleColor = ROLES[selected[team]].color;
+    var teamColor = team === 0 ? '#4fc3ff' : '#ff6b9d';
+    // BOSS 战：蓝方用队伍蓝、BOSS 用它自己的角色色
+    var color = teamMode ? teamColor
+      : (bossMode && team === 0 ? teamColor : roleColor);
+    var label = teamMode ? (team === 0 ? '蓝方' : '粉方')
+      : (bossMode && team === 0 ? '蓝方' : ROLES[selected[team]].name);
+    document.getElementById('pname' + team).textContent = label;
+    document.getElementById('pname' + team).style.color = color;
+    document.getElementById('hp' + team).style.background = color;
+  }
+  for (var i = 0; i < balls.length; i++) {
+    var color = ROLES[selected[i]].color;
+    balls[i].color = color;
+    balls[i].glow = glowOf(color);
+    balls[i].gradient = ROLES[selected[i]].gradient || null;
+    if (ROLES[selected[i]].role === 'medic') {
+      balls[i].medicPhase = 'cooldown';
+      balls[i].medicT = ROLE_MEDIC_CD;
+      balls[i].medicDamage = 0;
+      balls[i].medicRevivePhase = 'ready';
+      balls[i].medicReviveT = 0;
+      balls[i].medicReviveTarget = -1;
+    } else if (ROLES[selected[i]].role === 'mathematician') {
+      balls[i].mathPhase = 'cooldown';
+      balls[i].mathT = ROLE_MATH_CD;
+      balls[i].mathExpression = null;
+    } else if (ROLES[selected[i]].role === 'dynmath') {
+      balls[i].dynmathPhase = 'cooldown';
+      balls[i].dynmathT = ROLE_DYNMATH_CD;
+      balls[i].dynmathExpression = null;
+    } else if (ROLES[selected[i]].role === 'physicist') {
+      balls[i].physPhase = 'cooldown';
+      balls[i].physT = ROLE_PHYS_CD;
+      balls[i].physKind = 0;
+    } else if (ROLES[selected[i]].role === 'virus') {
+      balls[i].virusHits = 0;
+    } else if (ROLES[selected[i]].role === 'guard') {
+      balls[i].guardStage = 'idle';
+      balls[i].guardPoint = null;
+      balls[i].guardWallLock = 0;
+    }
+  }
+}
+
+/* ============ 对局控制 ============ */
+function resetMatch() {
+  var count = activeBallCount();
+  // 分裂者会往 selected 里追加分裂体的角色下标，开新局时收回 4 个槽位
+  if (selected.length > 4) selected.length = 4;
+  balls = [];
+  hp = [];
+  cd = [];
+  hook = [];
+  bumpLock = [];
+  previewPositions = [];
+  bossSplitT = bossSplitInterval();
+  var cy = ARENA.y + ARENA.size / 2;
+  for (var i = 0; i < count; i++) {
+    var ball = mkBall(i);
+    var team = teamOf(i);
+    var startY = cy;
+    if (bossMode) startY += i === 2 ? -ARENA.size * 0.14 : 0;
+    else if (teamMode) startY += (Math.floor(i / 2) === 0 ? -1 : 1) * ARENA.size * 0.14;
+    ball.spawnFrom = { x: team === 0 ? ARENA.x - BALL_R - 8 : ARENA.x + ARENA.size + BALL_R + 8, y: startY };
+    var target = spawnTarget(i);
+    ball.x = target.x; ball.y = target.y;
+    balls.push(ball);
+    hp.push(ROLES[selected[i]].maxHp);
+    cd.push(ROLES[selected[i]].role === 'dispatcher' ? ROLE_DISPATCHER_CD : 0);
+    hook.push(null);
+    bumpLock.push(0);
+    previewPositions.push(target);
+  }
+  for (var hookOwner = 0; hookOwner < count; hookOwner++) {
+    if (ROLES[selected[hookOwner]].role === 'hook') fireHook(hookOwner);
+  }
+  spawnT = 0;
+  dynamites = [];
+  trains = [];
+  physFields = [];
+  virusJars = [];
+  virusDots = [];
+  guardLines = [];
+  ballPrevPos = [];
+  bullets = [];
+  particles = [];
+  floatTexts = [];
+  finished = false;
+  updateHUD();
+}
+
+/* ============ 技能 ============ */
+// 通用伤害入口：被钩住期间无法受到角色技能以外的额外处理
+function dealDamage(target, amount, srcColor, srcX, srcY, sourceIndex) {
+  if (amount <= 0 || !balls[target] || hp[target] <= 0) return false;
+  if (balls[target] && ROLES[selected[target]].role === 'ghost') {
+    var ghost = balls[target];
+    if (ghost.ghostPhase === 'warp') {
+      amount *= 0.5;
+      ghost.ghostDmg = (ghost.ghostDmg || 0) + amount;
+    } else if (ghost.ghostPhase === 'ready' && !isManualPlay()) {
+      // 自动模式：受击即进入累计阶段；手动模式：必须玩家点击才进入
+      ghost.ghostPhase = 'warp';
+      ghost.ghostT = ROLE_GHOST_WARP;
+      amount *= 0.5;
+      ghost.ghostDmg = amount;
+    }
+  }
+  var previousHp = hp[target];
+  hp[target] = Math.max(0, hp[target] - amount);
+  recordMedicDamage(sourceIndex, target, previousHp - hp[target]);
+  spawnParticles(srcX, srcY, srcColor, 14);
+  floatTexts.push({ x: balls[target].x, y: balls[target].y - 22, text: '-' + amount, life: 1, color: srcColor });
+  flashHUD(target);
+  updateHUD();
+  if (teamDefeated(teamOf(target)) && !finished) endMatch(1 - teamOf(target));
+  return true;
+}
+
+function recordMedicDamage(sourceIndex, targetIndex, damage) {
+  if (!teamMode || sourceIndex == null || damage <= 0 ||
+      teamOf(sourceIndex) === teamOf(targetIndex)) return;
+  for (var i = 0; i < activeBallCount(); i++) {
+    if (ROLES[selected[i]].role !== 'medic' ||
+        teammateOf(i) !== sourceIndex || hp[i] <= 0) continue;
+    var medic = balls[i];
+    if (medic.medicPhase === 'ready' && !isManualPlay()) {
+      // 自动模式：队友造成伤害即开始蓄力；手动模式：必须玩家点击才进入累计阶段
+      medic.medicPhase = 'charge';
+      medic.medicT = ROLE_MEDIC_CHARGE;
+      medic.medicDamage = 0;
+      floatTexts.push({ x: medic.x, y: medic.y - 28, text: '援护蓄力！', life: 1, color: medic.color });
+    }
+    if (medic.medicPhase === 'charge') medic.medicDamage += damage;
+  }
+}
+
+function fireMedicBullet(owner) {
+  var medic = balls[owner];
+  var teammate = teammateOf(owner);
+  var target = balls[teammate];
+  var heal = medic.medicDamage * ROLE_MEDIC_HEAL;
+  if (target && heal > 0) {
+    var angle = Math.atan2(target.y - medic.y, target.x - medic.x);
+    bullets.push({
+      x: medic.x + Math.cos(angle) * (BALL_R + 4),
+      y: medic.y + Math.sin(angle) * (BALL_R + 4),
+      vx: Math.cos(angle) * BULLET_SPEED,
+      vy: Math.sin(angle) * BULLET_SPEED,
+      owner: owner,
+      healTarget: teammate,
+      kind: 'heal',
+      color: '#67e8a5',
+      heal: heal,
+      rico: 0,
+      ricoMax: ROLE_MEDIC_RICO
+    });
+  }
+  medic.medicPhase = 'cooldown';
+  medic.medicT = ROLE_MEDIC_CD;
+  medic.medicDamage = 0;
+}
+
+// 医者复活：把阵亡的队友原位以半血复活
+function reviveTeammate(medicIndex) {
+  var medic = balls[medicIndex];
+  if (!medic) return;
+  var target = medic.medicReviveTarget != null && medic.medicReviveTarget >= 0
+    ? medic.medicReviveTarget : teammateOf(medicIndex);
+  if (target < 0 || !balls[target]) {
+    medic.medicRevivePhase = 'used';
+    return;
+  }
+  var mateRole = ROLES[selected[target]];
+  var revived = mateRole ? mateRole.maxHp * ROLE_MEDIC_REVIVE_RATIO : MAX_HP * ROLE_MEDIC_REVIVE_RATIO;
+  hp[target] = revived;
+  // 原位复活：位置保持死亡点，速度重新随机，避免又贴着刚打死它的东西
+  var ball = balls[target];
+  var ang = Math.random() * Math.PI * 2;
+  ball.vx = Math.cos(ang) * BALL_SPEED;
+  ball.vy = Math.sin(ang) * BALL_SPEED;
+  ball.x = Math.max(ARENA.x + BALL_R, Math.min(ARENA.x + ARENA.size - BALL_R, ball.x));
+  ball.y = Math.max(ARENA.y + BALL_R, Math.min(ARENA.y + ARENA.size - BALL_R, ball.y));
+  // 复活瞬间清掉针对它的延迟伤害/伤害锁，避免刚复活就被残留效果打死
+  if (bumpLock[target] != null) bumpLock[target] = 0;
+  medic.medicRevivePhase = 'used';
+  medic.medicReviveTarget = -1;
+  medic.medicReviveT = 0;
+  spawnParticles(ball.x, ball.y, '#67e8a5', 22);
+  floatTexts.push({
+    x: ball.x, y: ball.y - BALL_R - 12,
+    text: '复活！' + Math.round(revived) + ' 血',
+    life: 1.6, color: '#67e8a5'
+  });
+  updateHUD();
+}
+
+function chooseMathOperator() {
+  if (Math.random() < ROLE_MATH_POWER_CHANCE) return '**';
+  return ['+', '-', '*', '/'][Math.floor(Math.random() * 4)];
+}
+
+function createMathExpression() {
+  for (var attempt = 0; attempt < 100; attempt++) {
+    var x1 = 1 + Math.floor(Math.random() * 10);
+    var x2 = 1 + Math.floor(Math.random() * 10);
+    var x3 = 1 + Math.floor(Math.random() * 10);
+    var n1 = chooseMathOperator();
+    var n2 = chooseMathOperator();
+    var first;
+    if (n1 === '+') first = x1 + x2;
+    else if (n1 === '-') first = x1 - x2;
+    else if (n1 === '*') first = x1 * x2;
+    else if (n1 === '/') first = x1 / x2;
+    else first = Math.max(-ROLE_MATH_POWER_LIMIT,
+      Math.min(ROLE_MATH_POWER_LIMIT, Math.pow(x1, x2)));
+    if (n2 === '/' && first === 0) continue;
+    var result;
+    if (n2 === '+') result = first + x3;
+    else if (n2 === '-') result = first - x3;
+    else if (n2 === '*') result = first * x3;
+    else if (n2 === '/') result = first / x3;
+    else result = Math.max(-ROLE_MATH_POWER_LIMIT,
+      Math.min(ROLE_MATH_POWER_LIMIT, Math.pow(first, x3)));
+    if (!Number.isFinite(result)) continue;
+    return { x1: x1, x2: x2, x3: x3, n1: n1, n2: n2, result: result };
+  }
+  throw new Error('无法生成有效的数学家算式');
+}
+
+function formatMathNumber(value) {
+  return Number.isInteger(value) ? String(value) : String(Number(value.toFixed(2)));
+}
+
+function mathExpressionText(expression) {
+  if (!expression) return '';
+  return '(' + expression.x1 + ' ' + expression.n1 + ' ' + expression.x2 + ') ' +
+    expression.n2 + ' ' + expression.x3 + ' = ' + formatMathNumber(expression.result);
+}
+
+function fireMathBullet(owner, aimAngle) {
+  var mathematician = balls[owner];
+  var targetIndex = aimAngle != null ? -1 : findEnemy(owner);
+  // 手动模式：朝玩家点击的方向；否则自动朝最近敌人
+  if (aimAngle != null || targetIndex >= 0) {
+    var target = targetIndex >= 0 ? balls[targetIndex] : null;
+    var angle = aimAngle != null ? aimAngle
+      : Math.atan2(target.y - mathematician.y, target.x - mathematician.x);
+    bullets.push({
+      x: mathematician.x + Math.cos(angle) * (BALL_R + 4),
+      y: mathematician.y + Math.sin(angle) * (BALL_R + 4),
+      vx: Math.cos(angle) * BULLET_SPEED,
+      vy: Math.sin(angle) * BULLET_SPEED,
+      owner: owner,
+      color: mathematician.color,
+      dmg: mathematician.mathExpression.result,
+      rico: 0,
+      ricoMax: ROLE_MATH_RICO
+    });
+  }
+  floatTexts.push({
+    x: mathematician.x, y: mathematician.y - 30,
+    text: '算式结果 ' + formatMathNumber(mathematician.mathExpression.result),
+    life: 1.2, color: mathematician.color
+  });
+  mathematician.mathPhase = 'cooldown';
+  mathematician.mathT = ROLE_MATH_CD;
+  mathematician.mathExpression = null;
+}
+
+// 爆破数学家系：蓄力结束后朝敌方掷出一枚“算式炸药”
+// 角色表参数决定这一发的表现：
+//   普通爆破数学家       → 伤害 = 算式结果，半径固定 120px，结果 ≤ 0 时不造成伤害
+//   爆破数学家V2         → 伤害固定 40，半径 = 96 + 结果 × 0.2（限制 40~480px），结果只影响范围
+// 引信/飞行速度两者都沿用爆破手。
+function dynMathRadiusOf(role, result) {
+  if (role && role.dynMathRadiusBase != null) {
+    var raw = role.dynMathRadiusBase + result * role.dynMathRadiusScale;
+    var minR = role.dynMathRadiusMin != null ? role.dynMathRadiusMin : 0;
+    var maxR = role.dynMathRadiusMax != null ? role.dynMathRadiusMax : Infinity;
+    return Math.max(minR, Math.min(maxR, raw));
+  }
+  return role && role.dynMathRadius != null ? role.dynMathRadius : ROLE_DYNMATH_RADIUS;
+}
+
+function dynMathDamageOf(role, result) {
+  if (role && role.dynMathDamage != null) return role.dynMathDamage;
+  return result;
+}
+
+function fireDynMathBomb(owner, aimAngle) {
+  var role = ROLES[selected[owner]];
+  var thrower = balls[owner];
+  var expression = thrower.dynmathExpression;
+  var result = expression ? expression.result : 0;
+  var dmg = dynMathDamageOf(role, result);
+  var radius = dynMathRadiusOf(role, result);
+  var ang = null;
+  if (aimAngle != null) {
+    ang = aimAngle;                       // 手动模式：朝点击方向
+  } else {
+    var enemyIndex = findEnemy(owner);
+    if (enemyIndex >= 0) {
+      var enemy = balls[enemyIndex];
+      ang = Math.atan2(enemy.y - thrower.y, enemy.x - thrower.x) + rand(-0.35, 0.35);
+    }
+  }
+  if (ang != null) {
+    dynamites.push({
+      owner: owner,
+      x: thrower.x + Math.cos(ang) * (BALL_R + 6),
+      y: thrower.y + Math.sin(ang) * (BALL_R + 6),
+      vx: Math.cos(ang) * ROLE_DYNMATH_SPEED,
+      vy: Math.sin(ang) * ROLE_DYNMATH_SPEED,
+      fuse: ROLE_DYNMATH_FUSE,
+      fuseMax: ROLE_DYNMATH_FUSE,
+      r: 9,
+      dmg: dmg > 0 ? dmg : 0,
+      radius: radius,
+      radiusFromFormula: role && role.dynMathRadiusBase != null,
+      color: thrower.color,
+      math: true
+    });
+  }
+  floatTexts.push({
+    x: thrower.x, y: thrower.y - 30,
+    text: role && role.dynMathDamage != null
+      ? formatMathNumber(dmg) + ' 伤 · 半径 ' + Math.round(radius) + 'px'
+      : '算式炸弹 ' + formatMathNumber(dmg),
+    life: 1.2, color: thrower.color
+  });
+  thrower.dynmathPhase = 'cooldown';
+  thrower.dynmathT = ROLE_DYNMATH_CD;
+  thrower.dynmathExpression = null;
+}
+
+// 霰弹枪手：冷却结束时同时射出 10 颗子弹
+// 扇形整体朝向最近的敌方（90° 张角），每颗子弹在这个 90° 内「随机」偏转（不是均匀等距）
+function fireGun(owner, aimAngle) {
+  if (cd[owner] > 0) return;
+  cd[owner] = ROLE_GUN_CD;
+  var b = balls[owner];
+  // 扇形中心：手动模式朝点击方向；否则朝最近敌方（无敌人时退回自身移动方向）
+  var centerAng;
+  if (aimAngle != null) {
+    centerAng = aimAngle;
+  } else {
+    var targetIndex = findEnemy(owner);
+    if (targetIndex >= 0) {
+      var enemy = balls[targetIndex];
+      centerAng = Math.atan2(enemy.y - b.y, enemy.x - b.x);
+    } else {
+      centerAng = Math.atan2(b.vy, b.vx);
+      if (b.vx === 0 && b.vy === 0) centerAng = teamOf(owner) === 0 ? 0 : Math.PI;
+    }
+  }
+  var half = ROLE_GUN_SPREAD / 2;
+  for (var i = 0; i < ROLE_GUN_COUNT; i++) {
+    var ang = centerAng + (Math.random() * 2 - 1) * half;   // 90° 内随机撒
+    var dmg = ROLE_GUN_DMG_MIN +
+      Math.floor(Math.random() * (ROLE_GUN_DMG_MAX - ROLE_GUN_DMG_MIN + 1));
+    bullets.push({
+      x: b.x + Math.cos(ang) * (BALL_R + 4),
+      y: b.y + Math.sin(ang) * (BALL_R + 4),
+      vx: Math.cos(ang) * BULLET_SPEED,
+      vy: Math.sin(ang) * BULLET_SPEED,
+      owner: owner,
+      color: b.color,
+      dmg: dmg,
+      life: 2.6
+    });
+  }
+}
+
+// 舰长：船锚常驻绕舰长 121px 旋转，碰到敌人即钩中
+// hookCount > 1 时（BOSS 舰长³）同时生成多个船锚，按 360°/count 均分夹角
+function makeHook(owner, angle) {
+  return {
+    owner: owner,
+    target: null,
+    ang: angle,
+    omega: (teamOf(owner) === 0 ? 1 : -1) * ROLE_HOOK_ORBIT_SPEED,
+    r: ROLE_HOOK_ORBIT_RADIUS,
+    released: false,
+    cd: 0,
+    hooked: false,
+    hits: 0,
+    t: 0,
+    hitTimer: 0,
+    ax: null,
+    ay: null
+  };
+}
+
+function fireHook(owner) {
+  var b = balls[owner];
+  if (!b) return;
+  if (hook[owner] && !hook[owner].released) return;
+  if (hook[owner] && hook[owner].cd > 0) return;
+  var ownerRole = ROLES[selected[owner]];
+  var count = Math.max(1, (ownerRole && ownerRole.hookCount) || 1);
+  var base = b.hookAngle != null ? b.hookAngle : Math.random() * Math.PI * 2;
+  var primary = makeHook(owner, base);
+  primary.extras = [];
+  for (var k = 1; k < count; k++) {
+    primary.extras.push(makeHook(owner, base + k * Math.PI * 2 / count));
+  }
+  hook[owner] = primary;
+  b.hookAngle = base;
+  floatTexts.push({
+    x: b.x, y: b.y - 30,
+    text: count > 1 ? ('船锚就绪 ×' + count) : '船锚就绪',
+    life: 0.9, color: b.color
+  });
+}
+
+// 把某个 owner 的所有船锚（主 + 额外）摊平成一个数组
+function hooksOf(owner) {
+  var list = [];
+  var h = hook[owner];
+  if (!h) return list;
+  list.push(h);
+  if (h.extras) {
+    for (var i = 0; i < h.extras.length; i++) list.push(h.extras[i]);
+  }
+  return list;
+}
+
+// 遍历场上所有船锚
+function eachHook(fn) {
+  for (var o = 0; o < hook.length; o++) {
+    var list = hooksOf(o);
+    for (var i = 0; i < list.length; i++) fn(list[i], o);
+  }
+}
+
+// 舰长系伤害区间：角色表可覆盖（吸血舰长 4~8，普通舰长 5~10）
+function rollHookDamage(role) {
+  var min = role && role.hookDmgMin != null ? role.hookDmgMin : ROLE_HOOK_DMG_MIN;
+  var max = role && role.hookDmgMax != null ? role.hookDmgMax : ROLE_HOOK_DMG_MAX;
+  if (max < min) max = min;
+  return min + Math.floor(Math.random() * (max - min + 1));
+}
+
+// 吸血：按“实际造成的伤害”回复自身生命，不超过自身血量上限
+// dealt 由调用方用「扣血前后差值」算出来，这样幽灵减伤等减免也会正确反映
+function applyHookLifesteal(owner, dealt) {
+  var role = ROLES[selected[owner]];
+  if (!role || !role.hookLifesteal || !(dealt > 0)) return;
+  var ownerBall = balls[owner];
+  if (!ownerBall || hp[owner] <= 0) return;
+  var before = hp[owner];
+  var heal = dealt * role.hookLifesteal;
+  hp[owner] = Math.min(role.maxHp, hp[owner] + heal);
+  var restored = hp[owner] - before;
+  if (restored <= 0.001) return;
+  floatTexts.push({
+    x: ownerBall.x, y: ownerBall.y - 24,
+    text: '+' + formatMathNumber(Number(restored.toFixed(2))),
+    life: 1, color: role.color
+  });
+  spawnParticles(ownerBall.x, ownerBall.y, role.color, 10);
+  updateHUD();
+}
+
+// 盾兵：本体贴脸一次 10 伤
+function fireShield(owner) {
+  if (cd[owner] > 0) return;
+  cd[owner] = ROLE_SHIELD_CD;
+  var target = findEnemy(owner);
+  if (target < 0) return;
+  var b = balls[owner], tb = balls[target];
+  var dist = Math.hypot(tb.x - b.x, tb.y - b.y);
+  if (dist > 0 && dist < BALL_R * 2 + 8) {
+    var nx = (tb.x - b.x) / dist;
+    var ny = (tb.y - b.y) / dist;
+    dealDamage(target, ROLE_SHIELD_BUMP, b.color, b.x, b.y, owner);
+    tb.vx += nx * 1.8;
+    tb.vy += ny * 1.8;
+    b.vx *= 0.92;
+    b.vy *= 0.92;
+    clampSpeed(tb);
+    clampSpeed(b);
+  }
+}
+
+// 统一技能触发入口（由 AI 按身份调用）
+function trySkill(owner) {
+  var role = ROLES[selected[owner]].role;
+  if (hook[owner] && !hook[owner].released) return; // 旋转期间本人不主动开别的
+  if (role === 'gun') fireGun(owner);
+  else if (role === 'hook') fireHook(owner);
+  else if (role === 'shield') fireShield(owner);
+  else if (role === 'dynamite') fireDynamite(owner);
+}
+
+
+/* ============ 爆破手：炸药 ============ */
+// 爆破手：向随机方向掷出一枚炸药
+function fireDynamite(owner, aimAngle) {
+  var b = balls[owner];
+  var ang;
+  if (aimAngle != null) {
+    ang = aimAngle;                       // 手动模式：朝点击方向
+  } else {
+    var enemyIndex = findEnemy(owner);
+    if (enemyIndex < 0) return;
+    var enemy = balls[enemyIndex];
+    ang = Math.atan2(enemy.y - b.y, enemy.x - b.x) + rand(-0.35, 0.35);
+  }
+  var sp = ROLE_DYN_SPEED;
+  dynamites.push({
+    owner: owner,
+    x: b.x + Math.cos(ang) * (BALL_R + 6),
+    y: b.y + Math.sin(ang) * (BALL_R + 6),
+    vx: Math.cos(ang) * sp,
+    vy: Math.sin(ang) * sp,
+    fuse: ROLE_DYN_FUSE,
+    fuseMax: ROLE_DYN_FUSE,
+    r: 9
+  });
+  cd[owner] = (ROLES[selected[owner]] && ROLES[selected[owner]].cd) || ROLE_DYN_CD;
+}
+
+// 炸药飞行、引信倒计时、爆炸
+function updateDynamites(dt) {
+  for (var i = dynamites.length - 1; i >= 0; i--) {
+    var d = dynamites[i];
+    d.x += d.vx;
+    d.y += d.vy;
+    d.fuse -= dt;
+    var inArena = d.x > ARENA.x && d.x < ARENA.x + ARENA.size
+                && d.y > ARENA.y && d.y < ARENA.y + ARENA.size;
+    if (d.fuse > 0 && inArena) continue;
+    // 引信到时或飞出场地 → 爆炸
+    var dynRole = ROLES[selected[d.owner]];
+    // 单发炸药可自带伤害/半径/配色（爆破数学家的算式炸药），否则回落到角色表与常量
+    var dynDmg = d.dmg != null ? d.dmg : ((dynRole && dynRole.dynDmg) || ROLE_DYN_DMG);
+    var dynRadius = d.radius != null ? d.radius : ROLE_DYN_RADIUS;
+    var dynColor = d.color || balls[d.owner].color;
+    for (var opp = 0; opp < balls.length; opp++) {
+      if (teamOf(opp) === teamOf(d.owner) || hp[opp] <= 0) continue;
+      var dist = Math.hypot(balls[opp].x - d.x, balls[opp].y - d.y);
+      if (dynDmg > 0 && dist <= dynRadius) {
+        dealDamage(opp, dynDmg, dynColor, d.x, d.y, d.owner);
+      }
+      if (finished) break;
+    }
+    // 爆炸视觉：环形粒子 + 伤害飘字
+    for (var k = 0; k < 34; k++) {
+      var a = (k / 34) * Math.PI * 2;
+      particles.push({
+        x: d.x, y: d.y,
+        vx: Math.cos(a) * rand(2.2, 5.4),
+        vy: Math.sin(a) * rand(2.2, 5.4),
+        life: rand(0.4, 0.9), maxLife: 0.9,
+        color: k % 3 === 0 ? '#fff3c4' : (k % 3 === 1 ? '#ffb347' : dynColor),
+        size: rand(2, 5)
+      });
+    }
+    floatTexts.push({
+      x: d.x, y: d.y - 10,
+      text: dynDmg > 0 ? formatMathNumber(dynDmg) : '0',
+      life: 0.9, color: d.math ? dynColor : '#ff8a3d'
+    });
+    dynamites.splice(i, 1);
+  }
+}
+
+function summonTrains(owner) {
+  var ownerRole = ROLES[selected[owner]];
+  var trainLength = ownerRole.trainLength || ROLE_TRAIN_LENGTH;
+  var laneInset = ROLE_TRAIN_WIDTH / 2 + BALL_R;
+  var verticalLane1 = rand(ARENA.x + laneInset, ARENA.x + ARENA.size / 2 - laneInset);
+  var verticalLane2 = rand(ARENA.x + ARENA.size / 2 + laneInset, ARENA.x + ARENA.size - laneInset);
+  var horizontalLane1 = rand(ARENA.y + laneInset, ARENA.y + ARENA.size / 2 - laneInset);
+  var horizontalLane2 = rand(ARENA.y + ARENA.size / 2 + laneInset, ARENA.y + ARENA.size - laneInset);
+  trains.push(
+    {
+      owner: owner, hit: new Array(balls.length).fill(false),
+      width: ROLE_TRAIN_WIDTH, length: trainLength,
+      axis: 'vertical', x: verticalLane1,
+      y: ARENA.y - trainLength / 2,
+      vy: ROLE_TRAIN_SPEED
+    },
+    {
+      owner: owner, hit: new Array(balls.length).fill(false),
+      width: ROLE_TRAIN_WIDTH, length: trainLength,
+      axis: 'vertical', x: verticalLane2,
+      y: ARENA.y - trainLength / 2,
+      vy: ROLE_TRAIN_SPEED
+    },
+    {
+      owner: owner, hit: new Array(balls.length).fill(false),
+      width: ROLE_TRAIN_WIDTH, length: trainLength,
+      axis: 'horizontal', x: ARENA.x - trainLength / 2,
+      y: horizontalLane1,
+      vx: ROLE_TRAIN_SPEED
+    },
+    {
+      owner: owner, hit: new Array(balls.length).fill(false),
+      width: ROLE_TRAIN_WIDTH, length: trainLength,
+      axis: 'horizontal', x: ARENA.x - trainLength / 2,
+      y: horizontalLane2,
+      vx: ROLE_TRAIN_SPEED
+    }
+  );
+  floatTexts.push({
+    x: ARENA.x + ARENA.size / 2,
+    y: ARENA.y + 30,
+    text: '列车进站！',
+    life: 1.2,
+    color: ROLES[selected[owner]].color
+  });
+}
+
+function updateTrains(dt) {
+  var pixelsPerFrame = dt * 60;
+  var left = ARENA.x, right = ARENA.x + ARENA.size;
+  var top = ARENA.y, bottom = ARENA.y + ARENA.size;
+
+  for (var i = trains.length - 1; i >= 0; i--) {
+    var train = trains[i];
+    train.x += (train.vx || 0) * pixelsPerFrame;
+    train.y += (train.vy || 0) * pixelsPerFrame;
+
+    if (train.axis === 'vertical' &&
+        train.y - train.length / 2 > bottom) {
+      trains.splice(i, 1);
+      continue;
+    }
+    if (train.axis === 'horizontal' &&
+        train.x - train.length / 2 > right) {
+      trains.splice(i, 1);
+      continue;
+    }
+
+    for (var ballIndex = 0; ballIndex < balls.length; ballIndex++) {
+      if (hp[ballIndex] <= 0) continue;
+      var ball = balls[ballIndex];
+      var firstHit = !train.hit[ballIndex];
+      var halfWidth = train.width / 2;
+      var halfLength = train.length / 2;
+      var closestX = Math.max(train.x - halfLength,
+        Math.min(ball.x, train.x + halfLength));
+      var closestY = Math.max(train.y - halfWidth,
+        Math.min(ball.y, train.y + halfWidth));
+      if (train.axis === 'vertical') {
+        closestX = Math.max(train.x - halfWidth,
+          Math.min(ball.x, train.x + halfWidth));
+        closestY = Math.max(train.y - halfLength,
+          Math.min(ball.y, train.y + halfLength));
+      }
+
+      var dx = ball.x - closestX;
+      var dy = ball.y - closestY;
+      var distance = Math.hypot(dx, dy);
+      if (distance > BALL_R) {
+        train.hit[ballIndex] = false;
+        continue;
+      }
+
+      var nx, ny;
+      if (distance > 0) {
+        nx = dx / distance;
+        ny = dy / distance;
+      } else {
+        var offsetX = ball.x - train.x;
+        var offsetY = ball.y - train.y;
+        var penetrationX = (train.axis === 'vertical' ? halfWidth : halfLength) - Math.abs(offsetX);
+        var penetrationY = (train.axis === 'vertical' ? halfLength : halfWidth) - Math.abs(offsetY);
+        if (penetrationX < penetrationY) {
+          nx = offsetX < 0 ? -1 : 1;
+          ny = 0;
+        } else {
+          nx = 0;
+          ny = offsetY < 0 ? -1 : 1;
+        }
+      }
+
+      var trainVx = train.vx || 0;
+      var trainVy = train.vy || 0;
+      var relativeVn = (ball.vx - trainVx) * nx + (ball.vy - trainVy) * ny;
+      if (relativeVn < 0) {
+        ball.vx -= 2 * relativeVn * nx;
+        ball.vy -= 2 * relativeVn * ny;
+      }
+      if (distance > 0) {
+        var pushOut = BALL_R - distance + 0.5;
+        ball.x += nx * pushOut;
+        ball.y += ny * pushOut;
+      } else {
+        if (nx !== 0) {
+          ball.x = train.x + nx *
+            ((train.axis === 'vertical' ? halfWidth : halfLength) + BALL_R + 0.5);
+        } else {
+          ball.y = train.y + ny *
+            ((train.axis === 'vertical' ? halfLength : halfWidth) + BALL_R + 0.5);
+        }
+      }
+      if (firstHit) {
+        train.hit[ballIndex] = true;
+        if (teamOf(ballIndex) !== teamOf(train.owner)) {
+          var ownerRole = ROLES[selected[train.owner]];
+          var damage = ownerRole.trainDmgMin +
+            Math.floor(Math.random() * (ownerRole.trainDmgMax - ownerRole.trainDmgMin + 1));
+          dealDamage(ballIndex, damage,
+            ROLES[selected[train.owner]].color, ball.x, ball.y, train.owner);
+          if (finished) return;
+        }
+        spawnParticles(ball.x, ball.y, ROLES[selected[train.owner]].color, 10);
+        floatTexts.push({
+          x: ball.x,
+          y: ball.y - BALL_R - 8,
+          text: teamOf(ballIndex) === teamOf(train.owner) ? '反弹' : '-' + damage,
+          life: 0.8,
+          color: ROLES[selected[train.owner]].color
+        });
+      }
+    }
+  }
+}
+
+/* ============ 物理学家：电场 / 引力场 / 光路 ============ */
+
+// 射线与线段求交（用于激光在镜面上的反射）：返回沿射线的距离 t
+function rayHitSegment(ox, oy, dx, dy, x1, y1, x2, y2) {
+  var ex = x2 - x1, ey = y2 - y1;
+  var denom = dx * ey - dy * ex;
+  if (Math.abs(denom) < 1e-9) return null;
+  var qx = x1 - ox, qy = y1 - oy;
+  var t = (qx * ey - qy * ex) / denom;
+  var u = (qx * dy - qy * dx) / denom;
+  if (t <= 0.001 || u < 0 || u > 1) return null;
+  return { t: t, x: ox + dx * t, y: oy + dy * t };
+}
+
+// 两条线段是否相交（判定小球这一帧有没有穿过光线）
+function segmentsCross(ax, ay, bx, by, cx, cy, ex, ey) {
+  var r1x = bx - ax, r1y = by - ay;
+  var r2x = ex - cx, r2y = ey - cy;
+  var den = r1x * r2y - r1y * r2x;
+  if (Math.abs(den) < 1e-9) return false;
+  var t = ((cx - ax) * r2y - (cy - ay) * r2x) / den;
+  var u = ((cx - ax) * r1y - (cy - ay) * r1x) / den;
+  return t >= 0 && t <= 1 && u >= 0 && u <= 1;
+}
+
+// 射线到擂台内壁的距离
+function rayToArenaEdge(ox, oy, dx, dy) {
+  var best = Infinity;
+  if (dx > 1e-9) best = Math.min(best, (ARENA.x + ARENA.size - ox) / dx);
+  if (dx < -1e-9) best = Math.min(best, (ARENA.x - ox) / dx);
+  if (dy > 1e-9) best = Math.min(best, (ARENA.y + ARENA.size - oy) / dy);
+  if (dy < -1e-9) best = Math.min(best, (ARENA.y - oy) / dy);
+  return best;
+}
+
+// 随机四块双面平面镜
+function makePhysMirrors() {
+  var mirrors = [];
+  for (var i = 0; i < ROLE_PHYS_MIRRORS; i++) {
+    var ang = rand(0, Math.PI);
+    var cx = rand(ARENA.x + ARENA.size * 0.2, ARENA.x + ARENA.size * 0.8);
+    var cy = rand(ARENA.y + ARENA.size * 0.2, ARENA.y + ARENA.size * 0.8);
+    var half = ROLE_PHYS_MIRROR_LEN / 2;
+    mirrors.push({
+      x1: cx - Math.cos(ang) * half, y1: cy - Math.sin(ang) * half,
+      x2: cx + Math.cos(ang) * half, y2: cy + Math.sin(ang) * half
+    });
+  }
+  return mirrors;
+}
+
+// 四角朝场地中心发射，遇镜面按镜面法线反射，生成整条光路
+function tracePhysLasers(mirrors) {
+  var corners = [
+    { x: ARENA.x, y: ARENA.y },
+    { x: ARENA.x + ARENA.size, y: ARENA.y },
+    { x: ARENA.x + ARENA.size, y: ARENA.y + ARENA.size },
+    { x: ARENA.x, y: ARENA.y + ARENA.size }
+  ];
+  var cx = ARENA.x + ARENA.size / 2, cy = ARENA.y + ARENA.size / 2;
+  var segments = [];
+  for (var c = 0; c < corners.length; c++) {
+    var ox = corners[c].x, oy = corners[c].y;
+    var dx = cx - ox, dy = cy - oy;
+    var len = Math.hypot(dx, dy) || 1;
+    dx /= len; dy /= len;
+    for (var bounce = 0; bounce <= ROLE_PHYS_RAY_BOUNCES; bounce++) {
+      var nearestT = rayToArenaEdge(ox, oy, dx, dy);
+      var hit = null;
+      for (var m = 0; m < mirrors.length; m++) {
+        var r = rayHitSegment(ox, oy, dx, dy, mirrors[m].x1, mirrors[m].y1, mirrors[m].x2, mirrors[m].y2);
+        if (r && r.t < nearestT) { nearestT = r.t; hit = { r: r, m: mirrors[m] }; }
+      }
+      segments.push({ x1: ox, y1: oy, x2: ox + dx * nearestT, y2: oy + dy * nearestT });
+      if (!hit) break;
+      var ex = hit.m.x2 - hit.m.x1, ey = hit.m.y2 - hit.m.y1;
+      var el = Math.hypot(ex, ey) || 1;
+      var nx = -ey / el, ny = ex / el;
+      var dot = dx * nx + dy * ny;
+      dx = dx - 2 * dot * nx;
+      dy = dy - 2 * dot * ny;
+      var nl = Math.hypot(dx, dy) || 1;
+      dx /= nl; dy /= nl;
+      ox = hit.r.x + dx * 0.5;
+      oy = hit.r.y + dy * 0.5;
+    }
+  }
+  return segments;
+}
+
+function gravityWallName(wall) {
+  return wall === 'left' ? '左' : wall === 'right' ? '右' : wall === 'top' ? '上' : '下';
+}
+
+function physKindName(kind) {
+  if (kind === 1) return '电场·电磁铁';
+  if (kind === 2) return '引力场';
+  if (kind === 3) return '光路·激光';
+  return '场域';
+}
+
+function wallDistanceOf(ball, field) {
+  if (field.dx > 0) return ARENA.x + ARENA.size - ball.x;
+  if (field.dx < 0) return ball.x - ARENA.x;
+  if (field.dy > 0) return ARENA.y + ARENA.size - ball.y;
+  return ball.y - ARENA.y;
+}
+
+// 冷却结束：随机激活三种场域之一
+function activatePhysField(owner) {
+  var team = teamOf(owner);
+  var ownerBall = balls[owner];
+  var kind = 1 + Math.floor(Math.random() * 3);
+  var field = {
+    owner: owner, team: team, kind: kind,
+    t: ROLE_PHYS_DURATION, tick: 0,
+    color: ownerBall ? ownerBall.color : '#22d3ee'
+  };
+  if (kind === 1) {
+    var side = ROLE_PHYS_FIELD_SIDE;
+    field.side = side;
+    field.x = rand(ARENA.x + 6, ARENA.x + ARENA.size - side - 6);
+    field.y = rand(ARENA.y + 6, ARENA.y + ARENA.size - side - 6);
+    field.cx = field.x + side / 2;
+    field.cy = field.y + side / 2;
+    floatTexts.push({ x: field.cx, y: field.y - 8, text: '电场·电磁铁', life: 1.3, color: field.color });
+  } else if (kind === 2) {
+    var dirs = [
+      { dx: 1, dy: 0, wall: 'right' },
+      { dx: -1, dy: 0, wall: 'left' },
+      { dx: 0, dy: 1, wall: 'bottom' },
+      { dx: 0, dy: -1, wall: 'top' }
+    ];
+    var pick = dirs[Math.floor(Math.random() * dirs.length)];
+    field.dx = pick.dx; field.dy = pick.dy; field.wall = pick.wall;
+    field.hitBook = {};
+    field.distBook = {};
+    for (var i = 0; i < balls.length; i++) {
+      if (teamOf(i) === team || hp[i] <= 0) continue;
+      field.distBook[i] = wallDistanceOf(balls[i], field);
+    }
+    floatTexts.push({
+      x: ARENA.x + ARENA.size / 2, y: ARENA.y + ARENA.size / 2,
+      text: '引力场·向' + gravityWallName(field.wall), life: 1.3, color: field.color
+    });
+  } else {
+    field.mirrors = makePhysMirrors();
+    field.segments = tracePhysLasers(field.mirrors);
+    field.lastPos = {};
+    for (var j = 0; j < balls.length; j++) {
+      field.lastPos[j] = { x: balls[j].x, y: balls[j].y };
+    }
+    floatTexts.push({
+      x: ARENA.x + ARENA.size / 2, y: ARENA.y + ARENA.size / 2,
+      text: '光路·四角激光', life: 1.3, color: field.color
+    });
+  }
+  physFields.push(field);
+  return kind;
+}
+
+function updatePhysFields(dt) {
+  for (var f = physFields.length - 1; f >= 0; f--) {
+    var field = physFields[f];
+    field.t -= dt;
+    if (field.kind === 1) updateElectricField(field, dt);
+    else if (field.kind === 2) updateGravityField(field, dt);
+    else updateLaserField(field);
+    if (finished) return;
+    if (field.t <= 0) physFields.splice(f, 1);
+  }
+}
+
+// 技能1：电场持续伤害 + 电磁铁吸走进入电场的所有子弹
+function updateElectricField(field, dt) {
+  var left = field.x, right = field.x + field.side;
+  var top = field.y, bottom = field.y + field.side;
+  field.tick += dt;
+  var ticked = false;
+  if (field.tick >= ROLE_PHYS_FIELD_TICK) {
+    field.tick -= ROLE_PHYS_FIELD_TICK;
+    ticked = true;
+  }
+  if (ticked) {
+    for (var i = 0; i < balls.length; i++) {
+      if (teamOf(i) === field.team || hp[i] <= 0) continue;
+      var b = balls[i];
+      if (b.x < left || b.x > right || b.y < top || b.y > bottom) continue;
+      dealDamage(i, ROLE_PHYS_FIELD_DPS * ROLE_PHYS_FIELD_TICK,
+        field.color, b.x, b.y, field.owner);
+      if (finished) return;
+    }
+  }
+  for (var q = bullets.length - 1; q >= 0; q--) {
+    var bl = bullets[q];
+    if (bl.x < left || bl.x > right || bl.y < top || bl.y > bottom) continue;
+    var dx = field.cx - bl.x, dy = field.cy - bl.y;
+    var d = Math.hypot(dx, dy) || 1;
+    if (d < 10) {
+      spawnParticles(bl.x, bl.y, field.color, 8);
+      bullets.splice(q, 1);
+      continue;
+    }
+    bl.vx += dx / d * ROLE_PHYS_MAGNET_ACCEL;
+    bl.vy += dy / d * ROLE_PHYS_MAGNET_ACCEL;
+    var sp = Math.hypot(bl.vx, bl.vy);
+    if (sp > ROLE_PHYS_MAGNET_MAX_SPEED) {
+      bl.vx = bl.vx / sp * ROLE_PHYS_MAGNET_MAX_SPEED;
+      bl.vy = bl.vy / sp * ROLE_PHYS_MAGNET_MAX_SPEED;
+    }
+  }
+}
+
+// 技能2：把所有敌方压向指定墙壁，撞墙按起手距离结算伤害
+function updateGravityField(field, dt) {
+  // 防御：联机时房客还原的场域没有内部记账字段，缺了就补上
+  if (!field.hitBook) field.hitBook = {};
+  if (!field.distBook) field.distBook = {};
+  for (var i = 0; i < balls.length; i++) {
+    if (teamOf(i) === field.team || hp[i] <= 0) continue;
+    var b = balls[i];
+    b.vx = field.dx * ROLE_PHYS_GRAVITY_PUSH;
+    b.vy = field.dy * ROLE_PHYS_GRAVITY_PUSH;
+    if (field.hitBook[i]) continue;
+    var atWall = false;
+    if (field.dx > 0) atWall = b.x >= ARENA.x + ARENA.size - BALL_R - 1;
+    else if (field.dx < 0) atWall = b.x <= ARENA.x + BALL_R + 1;
+    else if (field.dy > 0) atWall = b.y >= ARENA.y + ARENA.size - BALL_R - 1;
+    else atWall = b.y <= ARENA.y + BALL_R + 1;
+    if (!atWall) continue;
+    field.hitBook[i] = true;
+    var dist = field.distBook[i] || 0;
+    var dmg = Math.max(1, Math.floor(dist / ROLE_PHYS_GRAVITY_UNIT));
+    dealDamage(i, dmg, field.color, b.x, b.y, field.owner);
+    if (finished) return;
+    spawnParticles(b.x, b.y, field.color, 16);
+    floatTexts.push({ x: b.x, y: b.y - BALL_R - 10, text: '撞墙 -' + dmg, life: 0.9, color: field.color });
+  }
+}
+
+// 技能3：每次穿过光线受 5 伤（一帧穿过几条就结算几次）
+function updateLaserField(field) {
+  // 防御：联机时房客还原的场域没有位置记账，缺了就按当前球位初始化
+  if (!field.lastPos) {
+    field.lastPos = {};
+    for (var n = 0; n < balls.length; n++) field.lastPos[n] = { x: balls[n].x, y: balls[n].y };
+  }
+  if (!field.segments) field.segments = [];
+  for (var i = 0; i < balls.length; i++) {
+    var last = field.lastPos[i];
+    if (!last) { field.lastPos[i] = { x: balls[i].x, y: balls[i].y }; continue; }
+    if (teamOf(i) === field.team || hp[i] <= 0) {
+      last.x = balls[i].x; last.y = balls[i].y;
+      continue;
+    }
+    var crossed = 0;
+    for (var s = 0; s < field.segments.length; s++) {
+      var seg = field.segments[s];
+      if (segmentsCross(last.x, last.y, balls[i].x, balls[i].y, seg.x1, seg.y1, seg.x2, seg.y2)) crossed++;
+    }
+    if (crossed > 0) {
+      dealDamage(i, ROLE_PHYS_LASER_DMG * crossed, field.color, balls[i].x, balls[i].y, field.owner);
+      if (finished) return;
+    }
+    last.x = balls[i].x; last.y = balls[i].y;
+  }
+}
+
+/* ============ 病毒：病毒罐 + 分段延迟伤害 ============ */
+
+// 每 15 秒在场地随机位置丢下 2 个病毒罐
+function spawnVirusJars(owner) {
+  var team = teamOf(owner);
+  var color = ROLES[selected[owner]].color;
+  for (var n = 0; n < ROLE_VIRUS_JARS; n++) {
+    var margin = ROLE_VIRUS_JAR_R + 10;
+    var x = rand(ARENA.x + margin, ARENA.x + ARENA.size - margin);
+    var y = rand(ARENA.y + margin, ARENA.y + ARENA.size - margin);
+    virusJars.push({
+      owner: owner, team: team,
+      x: x, y: y, r: ROLE_VIRUS_JAR_R,
+      color: color, hits: 0, cool: {},
+      born: globalTime
+    });
+    spawnParticles(x, y, color, 8);
+  }
+  floatTexts.push({
+    x: ARENA.x + ARENA.size / 2, y: ARENA.y + ARENA.size / 2,
+    text: '投放病毒罐 ×' + ROLE_VIRUS_JARS, life: 1.2, color: color
+  });
+}
+
+// 罐子触碰检测 + 三段延迟伤害结算
+function updateVirus(dt) {
+  for (var j = virusJars.length - 1; j >= 0; j--) {
+    var jar = virusJars[j];
+    for (var key in jar.cool) {
+      if (jar.cool[key] > 0) jar.cool[key] = Math.max(0, jar.cool[key] - dt);
+    }
+    var touched = false;
+    for (var i = 0; i < balls.length; i++) {
+      if (hp[i] <= 0) continue;
+      if (teamOf(i) === jar.team) continue;          // 只对敌方生效
+      var b = balls[i];
+      if (Math.hypot(b.x - jar.x, b.y - jar.y) > BALL_R + jar.r) continue;
+      if (jar.cool[i] > 0) continue;
+      jar.cool[i] = ROLE_VIRUS_JAR_TOUCH_CD;
+      b.virusHits = (b.virusHits || 0) + 1;
+      var x = b.virusHits;
+      // 第 x 次碰到 → 分 3 次、每次间隔 1 秒，各造成 x 伤害
+      virusDots.push({
+        target: i, owner: jar.owner, dmg: x,
+        ticks: ROLE_VIRUS_DMG_TICKS, next: 0
+      });
+      floatTexts.push({
+        x: b.x, y: b.y - 26,
+        text: '病毒 x' + x, life: 1, color: jar.color
+      });
+      spawnParticles(b.x, b.y, jar.color, 10);
+      jar.hits++;
+      touched = true;
+      break;                                         // 一个罐子一帧只触发一次
+    }
+    if (touched && jar.hits >= ROLE_VIRUS_JAR_HITS) {
+      spawnParticles(jar.x, jar.y, jar.color, 14);
+      floatTexts.push({ x: jar.x, y: jar.y - 18, text: '罐子破碎', life: 0.9, color: jar.color });
+      virusJars.splice(j, 1);
+    }
+  }
+  // 延迟伤害队列：next <= 0 就结算一次，然后等 1 秒再结算下一次
+  for (var d = virusDots.length - 1; d >= 0; d--) {
+    var dot = virusDots[d];
+    dot.next -= dt;
+    while (dot.next <= 0 && dot.ticks > 0) {
+      var targetBall = balls[dot.target];
+      var ownerBall = balls[dot.owner];
+      dealDamage(dot.target, dot.dmg,
+        ownerBall ? ownerBall.color : '#a6e22e',
+        targetBall ? targetBall.x : ARENA.x + ARENA.size / 2,
+        targetBall ? targetBall.y : ARENA.y + ARENA.size / 2,
+        dot.owner);
+      if (finished) return;
+      dot.ticks--;
+      dot.next += ROLE_VIRUS_TICK_INTERVAL;
+    }
+    if (dot.ticks <= 0) virusDots.splice(d, 1);
+  }
+}
+
+/* ============ 保安：警戒线 ============ */
+
+// 撞墙回调：第一次落点开始拉线，第二次落点完成整条线
+function handleGuardWallHit(index) {
+  var b = balls[index];
+  if (!b || hp[index] <= 0) return;
+  if (b.guardWallLock > 0) return;
+  b.guardWallLock = ROLE_GUARD_WALL_LOCK;
+  var color = ROLES[selected[index]].color;
+  if (b.guardStage === 'first' && b.guardPoint) {
+    guardLines.push({
+      owner: index, team: teamOf(index),
+      x1: b.guardPoint.x, y1: b.guardPoint.y,
+      x2: b.x, y2: b.y,
+      color: color
+    });
+    b.guardStage = 'idle';
+    b.guardPoint = null;
+    floatTexts.push({ x: b.x, y: b.y - 20, text: '警戒线完成', life: 1, color: color });
+  } else {
+    b.guardStage = 'first';
+    b.guardPoint = { x: b.x, y: b.y };
+    floatTexts.push({ x: b.x, y: b.y - 20, text: '拉线…', life: 0.9, color: color });
+  }
+}
+
+// 穿线判定：用“上一帧位置 → 当前帧位置”与每条警戒线求交
+function updateGuardLines() {
+  for (var i = 0; i < balls.length; i++) {
+    var prev = ballPrevPos[i];
+    if (!prev || hp[i] <= 0) continue;
+    var b = balls[i];
+    var crossed = 0, lineOwner = -1, lineColor = '#7c8cff';
+    for (var l = 0; l < guardLines.length; l++) {
+      var line = guardLines[l];
+      if (line.team === teamOf(i)) continue;         // 只对敌方生效
+      if (!segmentsCross(prev.x, prev.y, b.x, b.y, line.x1, line.y1, line.x2, line.y2)) continue;
+      crossed++;
+      if (lineOwner < 0) { lineOwner = line.owner; lineColor = line.color; }
+    }
+    if (crossed > 0 && lineOwner >= 0) {
+      dealDamage(i, ROLE_GUARD_LINE_DMG * crossed, lineColor, b.x, b.y, lineOwner);
+      if (finished) return;
+      floatTexts.push({
+        x: b.x, y: b.y - 24,
+        text: '穿线 -' + (ROLE_GUARD_LINE_DMG * crossed), life: 0.9, color: lineColor
+      });
+    }
+  }
+}
+
+// 记录每帧位置，供下一帧的穿线判定使用
+function rememberBallPositions() {
+  for (var i = 0; i < balls.length; i++) {
+    var p = ballPrevPos[i];
+    if (!p) ballPrevPos[i] = { x: balls[i].x, y: balls[i].y };
+    else { p.x = balls[i].x; p.y = balls[i].y; }
+  }
+}
+
+/* ============ BOSS 分裂者：回血 + 全场分裂判定 ============ */
+
+function bossSplitInterval() {
+  if (BOSS_ROLE_INDEX >= 0 && ROLES[BOSS_ROLE_INDEX] && ROLES[BOSS_ROLE_INDEX].splitInterval != null) {
+    return ROLES[BOSS_ROLE_INDEX].splitInterval;
+  }
+  return ROLE_SPLIT_INTERVAL;
+}
+
+// 把一个分裂体一分为二：本体留一半血，新增一个同角色、同血量的分裂体
+function splitBossBall(index) {
+  var b = balls[index];
+  var role = ROLES[selected[index]];
+  if (!b || !role) return;
+  var half = hp[index] / 2;
+  hp[index] = half;
+  var ang = Math.random() * Math.PI * 2;
+  var off = BALL_R * 1.7;
+  var nb = mkBall(index);                       // 同一角色下标 → 同一个 BOSS 角色
+  nb.x = Math.max(ARENA.x + BALL_R, Math.min(ARENA.x + ARENA.size - BALL_R, b.x + Math.cos(ang) * off));
+  nb.y = Math.max(ARENA.y + BALL_R, Math.min(ARENA.y + ARENA.size - BALL_R, b.y + Math.sin(ang) * off));
+  nb.vx = Math.cos(ang + Math.PI) * BALL_SPEED;
+  nb.vy = Math.sin(ang + Math.PI) * BALL_SPEED;
+  nb.splitRegenT = role.regenInterval;
+  nb.splitNoRegenT = role.noRegenAfterSplit;
+  b.splitRegenT = role.regenInterval;
+  b.splitNoRegenT = role.noRegenAfterSplit;
+  // 关键：所有平行数组都必须按「新球的实际下标」写入。
+  // selected 的长度不一定等于 balls.length（BOSS 战里 selected 有 4 槽、balls 只有 3 个），
+  // 用 push 会让角色下标和球下标错位，分裂体就会读到别的角色（曾经读到 0 号炮手）。
+  var newIndex = balls.length;
+  balls.push(nb);
+  hp[newIndex] = half;
+  selected[newIndex] = selected[index];
+  cd[newIndex] = 0;
+  hook[newIndex] = null;
+  bumpLock[newIndex] = 0;
+  ballPrevPos[newIndex] = { x: nb.x, y: nb.y };
+  previewPositions[newIndex] = { x: nb.x, y: nb.y };
+  spawnParticles(b.x, b.y, role.color, 12);
+  spawnParticles(nb.x, nb.y, role.color, 12);
+  floatTexts.push({ x: nb.x, y: nb.y - BALL_R - 8, text: '分裂', life: 0.9, color: role.color });
+}
+
+// 全场每 15 秒做一次分裂判定（与满血球数量无关），另外每个分裂体各自回血
+function updateSplitters(dt) {
+  if (!bossMode) return;
+  bossSplitT -= dt;
+  if (bossSplitT <= 0) {
+    bossSplitT = bossSplitInterval();
+    var splitCount = 0;
+    // 先快照一份要分裂的下标，避免遍历过程中数组变长
+    var candidates = [];
+    for (var i = 0; i < balls.length; i++) {
+      if (teamOf(i) !== 1 || hp[i] <= 0) continue;
+      var role = ROLES[selected[i]];
+      if (!role || role.role !== 'splitter') continue;
+      if (hp[i] + 0.001 < role.maxHp) continue;   // 必须满血才会分裂
+      candidates.push(i);
+    }
+    for (var c = 0; c < candidates.length; c++) {
+      if (balls.length >= ROLE_SPLIT_MAX_BALLS) break;
+      splitBossBall(candidates[c]);
+      splitCount++;
+    }
+    if (splitCount > 0) {
+      floatTexts.push({
+        x: ARENA.x + ARENA.size / 2, y: ARENA.y + ARENA.size * 0.35,
+        text: '细胞分裂 ×' + splitCount, life: 1.3, color: '#7cf5c8'
+      });
+    }
+  }
+  // 每个分裂体独立回血；分裂后 5 秒内不回
+  for (var j = 0; j < balls.length; j++) {
+    if (hp[j] <= 0) continue;
+    var r = ROLES[selected[j]];
+    if (!r || r.role !== 'splitter') continue;
+    var ball = balls[j];
+    if (ball.splitNoRegenT > 0) ball.splitNoRegenT = Math.max(0, ball.splitNoRegenT - dt);
+    ball.splitRegenT -= dt;
+    if (ball.splitRegenT > 0) continue;
+    ball.splitRegenT = r.regenInterval;
+    if (ball.splitNoRegenT > 0) continue;
+    if (hp[j] >= r.maxHp) continue;
+    hp[j] = Math.min(r.maxHp, hp[j] + r.regenAmount);
+    floatTexts.push({ x: ball.x, y: ball.y - BALL_R - 6, text: '+' + r.regenAmount, life: 0.8, color: r.color });
+    updateHUD();
+  }
+}
+
+// 盾兵贴脸伤害锁逐帧衰减
+function decayLocks(dt) {
+  for (var i = 0; i < bumpLock.length; i++) {
+    if (bumpLock[i] > 0) bumpLock[i] = Math.max(0, bumpLock[i] - dt);
+  }
+}
+
+/* ============ 特效 ============ */
+function spawnParticles(x, y, color, n) {
+  for (var i = 0; i < n; i++) {
+    var a = rand(0, Math.PI * 2);
+    var sp = rand(1, 4);
+    particles.push({
+      x: x, y: y,
+      vx: Math.cos(a) * sp,
+      vy: Math.sin(a) * sp,
+      life: 1, color: color
+    });
+  }
+}
+
+/* ============ 更新逻辑 ============ */
+function update(dt) {
+  // 房客端不跑本地模拟：画面完全由房主发来的状态驱动
+  if (netIsGuest()) return;
+  if (!running) {
+    previewT += dt;
+    // 待机位在 resetMatch() 里固定好，这里只叠加平滑的浮动，避免每帧归位导致抖动
+    var ph = Math.sin(previewT * 2.2) * 6;
+    for (var i = 0; i < balls.length; i++) {
+      // 分裂体没有待机位，拿不到就原地不动（避免预览阶段读 undefined 报错）
+      var pp = previewPositions[i];
+      if (!pp) continue;
+      balls[i].x = pp.x;
+      balls[i].y = pp.y + (i % 2 === 0 ? ph : -ph);
+    }
+    return;
+  }
+
+  var left = ARENA.x + BALL_R;
+  var right = ARENA.x + ARENA.size - BALL_R;
+  var top = ARENA.y + BALL_R;
+  var bottom = ARENA.y + ARENA.size - BALL_R;
+
+  if (spawnT < 1) {
+    spawnT = Math.min(1, spawnT + dt * 1.6);
+    var k = easeOutCubic(spawnT);
+    for (var i = 0; i < balls.length; i++) {
+      var tg = previewPositions[i];
+      if (!tg || !balls[i].spawnFrom) continue;   // 分裂体没有出场动画
+      balls[i].x = balls[i].spawnFrom.x + (tg.x - balls[i].spawnFrom.x) * k;
+      balls[i].y = balls[i].spawnFrom.y + (tg.y - balls[i].spawnFrom.y) * k;
+    }
+    if (spawnT >= 1) {
+      for (var j = 0; j < balls.length; j++) {
+        var tg2 = previewPositions[j];
+        balls[j].x = tg2.x;
+        balls[j].y = tg2.y;
+        // 单位向量 * BALL_SPEED，保证合速度正好等于 BALL_SPEED，
+        // 开局第一帧不被 clampSpeed 修正方向
+        var sp = (teamOf(j) === 0 ? 0 : Math.PI) + (Math.random() - 0.5) * 0.6;
+        balls[j].vx = Math.cos(sp) * BALL_SPEED;
+        balls[j].vy = Math.sin(sp) * BALL_SPEED;
+      }
+    }
+    updateDynamites(dt);
+  if (finished) return;
+  decayLocks(dt);
+  collideBalls();
+  return;
+  }
+
+  for (var m = 0; m < balls.length; m++) {
+    if (hp[m] <= 0) continue;
+    var b = balls[m];
+    // 钩中目标的位置由钩子逻辑独占控制（锚点坐标即球心），
+    // 这里一旦再叠加 vx/vy，锚体就会相对球心漂出——必须跳过。
+    if (isHookedBall(m)) continue;
+    b.x += b.vx;
+    b.y += b.vy;
+    var hitWall = false;
+    if (b.x < left)  { b.x = left;  b.vx = Math.abs(b.vx);  hitWall = true; }
+    if (b.x > right) { b.x = right; b.vx = -Math.abs(b.vx); hitWall = true; }
+    if (b.y < top)    { b.y = top;    b.vy = Math.abs(b.vy); hitWall = true; }
+    if (b.y > bottom) { b.y = bottom; b.vy = -Math.abs(b.vy); hitWall = true; }
+    // 吸血鬼：撞墙后随机新方向，表现为"碰墙乱弹"，且不瞬移（用当前位置重算方向）
+    if (hitWall && ROLES[selected[m]].role === 'vampire') {
+      var va = Math.random() * Math.PI * 2;
+      var spd = BALL_SPEED * (0.85 + Math.random() * 0.15);
+      b.vx = Math.cos(va) * spd;
+      b.vy = Math.sin(va) * spd;
+    }
+    // 保安：撞墙即落点（第一次开始拉线，第二次完成警戒线）
+    if (hitWall && ROLES[selected[m]].role === 'guard') handleGuardWallHit(m);
+    clampSpeed(b);
+  }
+
+  updateDynamites(dt);
+  if (finished) return;
+  decayLocks(dt);
+  collideBalls();
+  if (finished) return;
+
+  for (var n = 0; n < balls.length; n++) {
+    cd[n] = Math.max(0, cd[n] - dt);
+    if (bumpLock[n] > 0) bumpLock[n] = Math.max(0, bumpLock[n] - dt);
+    if (balls[n].guardWallLock > 0) balls[n].guardWallLock = Math.max(0, balls[n].guardWallLock - dt);
+  }
+  updateTrains(dt);
+  if (finished) return;
+
+  var manual = isManualPlay();   // 联机时由玩家点击释放，AI 只管状态机推进
+  for (var p = 0; p < balls.length; p++) {
+    if (hp[p] <= 0) continue;
+    var role = ROLES[selected[p]].role;
+    if (role === 'gun') {
+      // 霰弹枪手：冷却到 0 就朝敌方扇形开火，开火后重置冷却
+      if (!manual && cd[p] <= 0) fireGun(p);
+    } else if (role === 'hook') {
+      if (!hook[p]) fireHook(p);
+    } else if (role === 'shield') {
+      // 盾兵：贴脸时按冷却撞击，平时不主动开技能
+      if (cd[p] <= 0) fireShield(p);
+    } else if (role === 'vampire') {
+      // 吸血鬼：乱弹不追踪。仅在撞墙/碰敌时才重随机（见 collideBalls / 边界反弹），
+      // 不在每帧以概率触发，否则会表现为"中间抽一下瞬移"。
+      clampSpeed(balls[p], BALL_SPEED);
+    } else if (role === 'dynamite') {
+      // 爆破手：冷却到 0 即向随机方向投掷一枚炸药
+      if (!manual && cd[p] <= 0) fireDynamite(p);
+    } else if (role === 'dispatcher') {
+      if (!manual && cd[p] <= 0) {
+        summonTrains(p);
+        cd[p] = ROLE_DISPATCHER_CD;
+      }
+    } else if (role === 'cowboy') {
+      var cb = balls[p];
+      // 齐射进行中：逐发射出，期间自身持续停止移动
+      if (cb.cowboyIdx != null && cb.cowboyIdx < ROLE_COWBOY_SHOTS) {
+        cb.cowboyNext -= dt;
+        if (cb.cowboyNext <= 0) {
+          var cang;
+          if (cb.cowboyAng != null) {
+            cang = cb.cowboyAng;               // 手动模式：整轮齐射都朝点击方向
+          } else {
+            var cowboyTarget = findEnemy(p);
+            if (cowboyTarget < 0) continue;
+            var cdx = balls[cowboyTarget].x - cb.x, cdy = balls[cowboyTarget].y - cb.y;
+            cang = Math.atan2(cdy, cdx);       // 自动模式：每发重新瞄准
+          }
+          var cdmg = ROLE_COWBOY_DMG_MIN + Math.floor(Math.random() * (ROLE_COWBOY_DMG_MAX - ROLE_COWBOY_DMG_MIN + 1));
+          bullets.push({
+            x: cb.x + Math.cos(cang) * (BALL_R + 4),
+            y: cb.y + Math.sin(cang) * (BALL_R + 4),
+            vx: Math.cos(cang) * BULLET_SPEED,
+            vy: Math.sin(cang) * BULLET_SPEED,
+            owner: p,
+            color: cb.color,
+            dmg: cdmg,
+            rico: 0,
+            ricoMax: ROLE_COWBOY_RICO
+          });
+          cb.cowboyIdx++;
+          cb.cowboyNext += cb.cowboyPause;
+        }
+        cb.vx = 0; cb.vy = 0;
+        continue;
+      } else if (cb.cowboyIdx != null) {
+        // 6 发全部射完，恢复乱弹
+        cb.cowboyIdx = null; cb.cowboyNext = 0; cb.cowboyAng = null;
+      }
+      // 非齐射期间：持续乱弹，与其他 keep 型角色一致
+      if (cb.cowboyIdx == null) {
+        if (Math.random() < dt * 1.5) {
+          var ra = Math.random() * Math.PI * 2;
+          cb.vx = Math.cos(ra) * BALL_SPEED;
+          cb.vy = Math.sin(ra) * BALL_SPEED;
+        }
+        clampSpeed(cb, BALL_SPEED);
+      }
+      // 冷却到 0：开始一轮齐射（手动模式下由点击触发）
+      if (!manual && cd[p] <= 0) {
+        cd[p] = ROLE_COWBOY_CD;
+        cb.cowboyIdx = 0;
+        cb.cowboyNext = 2.5;           // 首发延迟，使齐射中点对齐 10 秒周期
+        cb.cowboyPause = 0.3;          // 每 0.3 秒一发
+        cb.vx = 0; cb.vy = 0;
+      }
+    } else if (role === 'ghost') {
+      var g = balls[p];
+      var phase = g.ghostPhase || 'cooldown';
+      var gt = g.ghostT != null ? g.ghostT : 0;
+      if (phase === 'cooldown') {
+        gt = Math.max(0, gt - dt);
+        if (gt <= 0) phase = 'ready';
+      } else if (phase === 'warp') {
+        gt -= dt;
+        if (gt <= 0) {
+          var gd = Math.max(0, g.ghostDmg || 0) * ROLE_GHOST_RETURN;
+          g.ghostDmg = 0;
+          if (gd > 0) {
+            // 手动模式：朝玩家点击方向；自动模式：朝最近敌人
+            var gang = null;
+            if (g.castAng != null) {
+              gang = g.castAng;
+            } else {
+              var ghostTarget = findEnemy(p);
+              if (ghostTarget < 0) break;
+              var eg = balls[ghostTarget];
+              gang = Math.atan2(eg.y - g.y, eg.x - g.x);
+            }
+            bullets.push({
+              x: g.x + Math.cos(gang) * (BALL_R + 4),
+              y: g.y + Math.sin(gang) * (BALL_R + 4),
+              vx: Math.cos(gang) * BULLET_SPEED,
+              vy: Math.sin(gang) * BULLET_SPEED,
+              owner: p,
+              color: g.color,
+              dmg: gd,
+              rico: 0,
+              ricoMax: ROLE_GHOST_RICO
+            });
+          }
+          phase = 'cooldown';
+          gt = ROLE_GHOST_CD;
+        }
+      }
+      g.ghostPhase = phase; g.ghostT = gt;
+      // 幽灵保持当前方向移动，仅在碰墙时反弹。
+      if (phase !== 'warp') {
+        clampSpeed(g, BALL_SPEED);
+      }
+    } else if (role === 'medic') {
+      var medic = balls[p];
+      // ===== 复活蓄力（每局一次）：队友阵亡 → 30 秒蓄力 → 半血复活 =====
+      if (medic.medicRevivePhase === 'ready') {
+        var reviveMate = teammateOf(p);
+        if (reviveMate >= 0 && balls[reviveMate] && hp[reviveMate] <= 0) {
+          medic.medicRevivePhase = 'charging';
+          medic.medicReviveT = ROLE_MEDIC_REVIVE_CHARGE;
+          medic.medicReviveTarget = reviveMate;
+          floatTexts.push({
+            x: medic.x, y: medic.y - 30,
+            text: '开始复活蓄力 ' + ROLE_MEDIC_REVIVE_CHARGE + 's',
+            life: 1.6, color: medic.color
+          });
+          updateHUD();
+        }
+      } else if (medic.medicRevivePhase === 'charging') {
+        medic.medicReviveT -= dt;
+        if (medic.medicReviveT <= 0) {
+          reviveTeammate(p);
+          if (finished) return;
+        }
+      }
+      // 蓄力期间只能用复活，不能发治疗弹（治疗状态机整体冻结）
+      if (medic.medicRevivePhase !== 'charging') {
+        if (medic.medicPhase === 'cooldown') {
+          medic.medicT = Math.max(0, medic.medicT - dt);
+          if (medic.medicT <= 0) medic.medicPhase = 'ready';
+        } else if (medic.medicPhase === 'charge') {
+          medic.medicT -= dt;
+          if (medic.medicT <= 0) fireMedicBullet(p);
+        }
+      }
+    } else if (role === 'mathematician') {
+      var mathematician = balls[p];
+      if (mathematician.mathPhase === 'cooldown') {
+        mathematician.mathT = Math.max(0, mathematician.mathT - dt);
+        if (!manual && mathematician.mathT <= 0) {
+          mathematician.mathPhase = 'charge';
+          mathematician.mathT = ROLE_MATH_CHARGE;
+          mathematician.mathExpression = createMathExpression();
+        }
+      } else if (mathematician.mathPhase === 'charge') {
+        mathematician.mathT -= dt;
+        if (mathematician.mathT <= 0) fireMathBullet(p, mathematician.castAng);
+      }
+    } else if (role === 'dynmath') {
+      // 爆破数学家：15 秒冷却 → 5 秒算式蓄力 → 掷出算式炸药
+      var dynMathBall = balls[p];
+      if (dynMathBall.dynmathPhase === 'cooldown') {
+        dynMathBall.dynmathT = Math.max(0, dynMathBall.dynmathT - dt);
+        if (!manual && dynMathBall.dynmathT <= 0) {
+          dynMathBall.dynmathPhase = 'charge';
+          dynMathBall.dynmathT = ROLE_DYNMATH_CHARGE;
+          dynMathBall.dynmathExpression = createMathExpression();
+          floatTexts.push({
+            x: dynMathBall.x, y: dynMathBall.y - 30,
+            text: mathExpressionText(dynMathBall.dynmathExpression),
+            life: 1.4, color: dynMathBall.color
+          });
+        }
+      } else if (dynMathBall.dynmathPhase === 'charge') {
+        dynMathBall.dynmathT -= dt;
+        if (dynMathBall.dynmathT <= 0) fireDynMathBomb(p, dynMathBall.castAng);
+      }
+    } else if (role === 'gunner') {
+      // 枪手：每 5 秒朝敌方发射一发可反弹子弹（手动模式下由点击触发）
+      if (!manual && cd[p] <= 0) {
+        var enemyIndex = findEnemy(p);
+        if (enemyIndex < 0) continue;
+        var enemy = balls[enemyIndex];
+        var me = balls[p];
+        var gdx = enemy.x - me.x, gdy = enemy.y - me.y;
+        var gl = Math.hypot(gdx, gdy) || 1;
+        var gdmg = ROLE_GUNNER_DMG_MIN + Math.floor(Math.random() * (ROLE_GUNNER_DMG_MAX - ROLE_GUNNER_DMG_MIN + 1));
+        bullets.push({
+          x: me.x + gdx / gl * (BALL_R + 4),
+          y: me.y + gdy / gl * (BALL_R + 4),
+          vx: gdx / gl * BULLET_SPEED,
+          vy: gdy / gl * BULLET_SPEED,
+          owner: p,
+          color: me.color,
+          dmg: gdmg,
+          rico: 0,
+          ricoMax: ROLE_GUNNER_RICO
+        });
+        cd[p] = ROLE_GUNNER_CD;
+      }
+    } else if (role === 'physicist') {
+      // 物理学家：20 秒冷却结束后随机激活一种场域，场域自身持续 5 秒
+      var physBall = balls[p];
+      if (physBall.physPhase === 'active') {
+        physBall.physT -= dt;
+        if (physBall.physT <= 0) {
+          physBall.physPhase = 'cooldown';
+          physBall.physT = ROLE_PHYS_CD;
+          physBall.physKind = 0;
+        }
+      } else if (physBall.physPhase === 'cooldown') {
+        physBall.physT = Math.max(0, physBall.physT - dt);
+        if (!manual && physBall.physT <= 0) {
+          physBall.physKind = activatePhysField(p);
+          physBall.physPhase = 'active';
+          physBall.physT = ROLE_PHYS_DURATION;
+        }
+      }
+    } else if (role === 'virus') {
+      // 病毒：每 15 秒投放 2 个病毒罐（cd 由通用冷却驱动；手动模式下由点击触发）
+      if (!manual && cd[p] <= 0) {
+        spawnVirusJars(p);
+        cd[p] = ROLE_VIRUS_CD;
+      }
+    } else if (role === 'guard') {
+      // 保安：无冷却，撞墙即在 handleGuardWallHit 里推进拉线状态，这里不需要做事
+    }
+  }
+
+  for (var q = bullets.length - 1; q >= 0; q--) {
+    var bl = bullets[q];
+    bl.x += bl.vx;
+    bl.y += bl.vy;
+    if (bl.life != null) bl.life -= dt;
+    // 撞墙反弹：反弹次数未耗尽则在场内反弹，耗尽才出界销毁
+    var ricLim = bl.ricoMax != null ? bl.ricoMax : 0;
+    if (bl.rico != null && bl.rico < ricLim) {
+      var bL = ARENA.x + BULLET_R, bR = ARENA.x + ARENA.size - BULLET_R;
+      var bT = ARENA.y + BULLET_R, bB = ARENA.y + ARENA.size - BULLET_R;
+      if (bl.x < bL) { bl.x = bL; bl.vx = Math.abs(bl.vx); bl.rico++; }
+      else if (bl.x > bR) { bl.x = bR; bl.vx = -Math.abs(bl.vx); bl.rico++; }
+      if (bl.y < bT) { bl.y = bT; bl.vy = Math.abs(bl.vy); bl.rico++; }
+      else if (bl.y > bB) { bl.y = bB; bl.vy = -Math.abs(bl.vy); bl.rico++; }
+    }
+    if (bl.rico != null && bl.rico >= ricLim) {
+      // 反弹次数耗尽后按普通子弹处理出界
+      if (bl.x < ARENA.x - BULLET_R || bl.x > ARENA.x + ARENA.size + BULLET_R ||
+          bl.y < ARENA.y - BULLET_R || bl.y > ARENA.y + ARENA.size + BULLET_R) {
+        bullets.splice(q, 1);
+        continue;
+      }
+    }
+    if (bl.life != null && bl.life <= 0) { bullets.splice(q, 1); continue; }
+    if (bl.kind === 'heal') {
+      var healTarget = balls[bl.healTarget];
+      if (healTarget && hp[bl.healTarget] > 0 &&
+          Math.hypot(bl.x - healTarget.x, bl.y - healTarget.y) < BALL_R + BULLET_R) {
+        var oldHp = hp[bl.healTarget];
+        hp[bl.healTarget] = Math.min(ROLES[selected[bl.healTarget]].maxHp,
+          hp[bl.healTarget] + bl.heal);
+        var restored = hp[bl.healTarget] - oldHp;
+        if (restored > 0) {
+          floatTexts.push({
+            x: healTarget.x, y: healTarget.y - 22,
+            text: '+' + formatMathNumber(restored), life: 1, color: '#67e8a5'
+          });
+          spawnParticles(healTarget.x, healTarget.y, '#67e8a5', 14);
+          updateHUD();
+        }
+        bullets.splice(q, 1);
+      }
+      continue;
+    }
+    for (var targetIndex = 0; targetIndex < balls.length; targetIndex++) {
+      if (teamOf(targetIndex) === teamOf(bl.owner) || hp[targetIndex] <= 0) continue;
+      var target = balls[targetIndex];
+      if (Math.hypot(bl.x - target.x, bl.y - target.y) < BALL_R + BULLET_R) {
+        var dmg = bl.dmg != null ? bl.dmg : 12;
+        dealDamage(targetIndex, dmg, bl.color, bl.x, bl.y, bl.owner);
+        if (finished) return;
+        target.vx += bl.vx * 0.12;
+        target.vy += bl.vy * 0.12;
+        bullets.splice(q, 1);
+        break;
+      }
+    }
+  }
+
+  // 物理学家：电场伤害/吸弹、引力场推动、激光穿越判定
+  // 放在子弹更新之后，激光才能用“这一帧的位移”判断是否穿过光线
+  updatePhysFields(dt);
+  if (finished) return;
+
+  // 病毒：罐子触碰与三段延迟伤害
+  updateVirus(dt);
+  if (finished) return;
+
+  // 保安：警戒线穿线判定（用上一帧位置 → 当前帧位置），然后刷新位置记录
+  updateGuardLines();
+  if (finished) return;
+  rememberBallPositions();
+
+  // BOSS 分裂者：回血与每 15 秒的全场分裂判定
+  updateSplitters(dt);
+  if (finished) return;
+
+  for (var s = particles.length - 1; s >= 0; s--) {
+    var pt = particles[s];
+    pt.x += pt.vx; pt.y += pt.vy;
+    pt.vx *= 0.94; pt.vy *= 0.94;
+    pt.life -= dt * 2.5;
+    if (pt.life <= 0) particles.splice(s, 1);
+  }
+
+  for (var f = floatTexts.length - 1; f >= 0; f--) {
+    var ft = floatTexts[f];
+    ft.y -= dt * 30;
+    ft.life -= dt * 1.4;
+    if (ft.life <= 0) floatTexts.splice(f, 1);
+  }
+
+  // ===== 舰长船锚：持续绕舰长旋转，钩住目标时排除普通球体碰撞 =====
+  // BOSS 舰长³ 会有多个船锚，这里摊平成一张表逐个推进
+  var allHooks = [];
+  eachHook(function (hh) { allHooks.push(hh); });
+  for (var hx = 0; hx < allHooks.length; hx++) {
+    var h = allHooks[hx];
+    if (!h) continue;
+    var owner2 = balls[h.owner];
+    if (!owner2 || hp[h.owner] <= 0) continue;
+    if (h.released) {
+      h.cd = Math.max(0, h.cd - dt);
+      if (h.cd <= 0) {
+        h.released = false;
+        h.hooked = false;
+        h.target = null;
+        h.t = 0;
+        h.hits = 0;
+        h.ang = owner2.hookAngle != null ? owner2.hookAngle : h.ang;
+        floatTexts.push({ x: owner2.x, y: owner2.y - 30, text: '船锚就绪', life: 0.9, color: owner2.color });
+      } else {
+        continue;
+      }
+    }
+    // 手动模式：船锚不再自转，朝向由玩家点击决定（距离保持 121px）
+    if (!isManualPlay()) h.ang += h.omega * dt;
+    var anchorX = owner2.x + Math.cos(h.ang) * h.r;
+    var anchorY = owner2.y + Math.sin(h.ang) * h.r;
+    var leftEdge = ARENA.x + BALL_R;
+    var rightEdge = ARENA.x + ARENA.size - BALL_R;
+    var topEdge = ARENA.y + BALL_R;
+    var bottomEdge = ARENA.y + ARENA.size - BALL_R;
+    var hitWall = false;
+    var hitLeft = anchorX < leftEdge;
+    var hitRight = anchorX > rightEdge;
+    var hitTop = anchorY < topEdge;
+    var hitBottom = anchorY > bottomEdge;
+    if (hitLeft || hitRight || hitTop || hitBottom) {
+      var boundaryX = hitLeft ? leftEdge : rightEdge;
+      var boundaryY = hitTop ? topEdge : bottomEdge;
+      var resolved = false;
+      var wallSide = null;
+      if (hitLeft || hitRight) {
+        var offsetX = boundaryX - owner2.x;
+        var remainY = h.r * h.r - offsetX * offsetX;
+        if (remainY >= 0) {
+          var intersectionY = owner2.y +
+            (Math.sin(h.ang) >= 0 ? 1 : -1) * Math.sqrt(remainY);
+          if (intersectionY >= topEdge && intersectionY <= bottomEdge) {
+            anchorX = boundaryX;
+            anchorY = intersectionY;
+            h.ang = Math.atan2(anchorY - owner2.y, anchorX - owner2.x);
+            wallSide = hitLeft ? 'left' : 'right';
+            resolved = true;
+          }
+        }
+      }
+      if (!resolved && (hitTop || hitBottom)) {
+        var offsetY = boundaryY - owner2.y;
+        var remainX = h.r * h.r - offsetY * offsetY;
+        if (remainX >= 0) {
+          var intersectionX = owner2.x +
+            (Math.cos(h.ang) >= 0 ? 1 : -1) * Math.sqrt(remainX);
+          if (intersectionX >= leftEdge && intersectionX <= rightEdge) {
+            anchorX = intersectionX;
+            anchorY = boundaryY;
+            h.ang = Math.atan2(anchorY - owner2.y, anchorX - owner2.x);
+            wallSide = hitTop ? 'top' : 'bottom';
+            resolved = true;
+          }
+        }
+      }
+      if (!resolved) {
+        anchorX = Math.max(leftEdge, Math.min(rightEdge, anchorX));
+        anchorY = Math.max(topEdge, Math.min(bottomEdge, anchorY));
+        h.ang = Math.atan2(anchorY - owner2.y, anchorX - owner2.x);
+        wallSide = hitRight ? 'right' : hitLeft ? 'left' : hitBottom ? 'bottom' : 'top';
+      }
+      var direction = 0;
+      if (wallSide === 'right') direction = Math.sign(Math.sin(h.ang));
+      else if (wallSide === 'left') direction = -Math.sign(Math.sin(h.ang));
+      else if (wallSide === 'top') direction = Math.sign(Math.cos(h.ang));
+      else if (wallSide === 'bottom') direction = -Math.sign(Math.cos(h.ang));
+      h.omega = (direction || -Math.sign(h.omega)) * Math.abs(h.omega);
+      hitWall = true;
+    }
+    h.ax = anchorX;
+    h.ay = anchorY;
+    var justReleased = false;
+    if (h.hooked && h.target != null && hp[h.target] > 0) {
+      var target2 = balls[h.target];
+      target2.x = anchorX;
+      target2.y = anchorY;
+      target2.vx = 0;
+      target2.vy = 0;
+      h.t += dt;
+      if (hitWall) {
+        var wallDmg = rollHookDamage(ROLES[selected[h.owner]]);
+        var wallHpBefore = hp[h.target];
+        dealDamage(h.target, wallDmg, owner2.color, anchorX, anchorY, h.owner);
+        applyHookLifesteal(h.owner, wallHpBefore - hp[h.target]);
+        spawnParticles(anchorX, anchorY, '#ffffff', 18);
+        floatTexts.push({
+          x: anchorX, y: anchorY - 30,
+          text: '撞墙 -' + wallDmg, life: 0.9, color: '#ffffff'
+        });
+        h.hits++;
+        if (finished) return;
+      }
+      if (h.hits >= ROLE_HOOK_HITS || h.t >= ROLE_HOOK_SPIN) {
+        var releasedTarget = target2;
+        h.released = true;
+        h.cd = ROLE_HOOK_COOLDOWN;
+        h.target = null;
+        h.hooked = false;
+        h.t = 0;
+        justReleased = true;
+        var releaseAng = Math.atan2(releasedTarget.y - owner2.y, releasedTarget.x - owner2.x);
+        releasedTarget.vx = Math.cos(releaseAng) * BALL_SPEED * 0.8;
+        releasedTarget.vy = Math.sin(releaseAng) * BALL_SPEED * 0.8;
+        clampSpeed(releasedTarget);
+        floatTexts.push({
+          x: owner2.x, y: owner2.y - 30,
+          text: (h.hits >= ROLE_HOOK_HITS ? '挣脱！' : '释放！') +
+            '冷却 ' + ROLE_HOOK_COOLDOWN + 's',
+          life: 1.2, color: owner2.color
+        });
+      }
+    } else if (h.hooked) {
+      h.target = null;
+      h.hooked = false;
+      h.t = 0;
+    }
+    if (!h.released && !h.hooked && !justReleased) {
+      var enemyIndex = findEnemy(h.owner);
+      if (enemyIndex >= 0) {
+        var enemy = balls[enemyIndex];
+        var dx = enemy.x - anchorX;
+        var dy = enemy.y - anchorY;
+        if (Math.hypot(dx, dy) <= ROLE_HOOK_COLLISION_RADIUS) {
+          h.target = enemyIndex;
+          h.hooked = true;
+          h.t = 0;
+          var dmg = rollHookDamage(ROLES[selected[h.owner]]);
+          var hookHpBefore = hp[enemyIndex];
+          dealDamage(enemyIndex, dmg, owner2.color, anchorX, anchorY, h.owner);
+          applyHookLifesteal(h.owner, hookHpBefore - hp[enemyIndex]);
+          if (finished) return;
+          floatTexts.push({ x: enemy.x, y: enemy.y - 30, text: '钩中！', life: 1.1, color: owner2.color });
+        }
+      }
+    }
+    owner2.hookAngle = h.ang;
+  }
+}
+
+function collideBalls() {
+  for (var i = 0; i < balls.length; i++) {
+    for (var j = i + 1; j < balls.length; j++) {
+      if (hp[i] <= 0 || hp[j] <= 0) continue;
+      if (isHookedBall(i) || isHookedBall(j)) continue;
+      var a = balls[i], b = balls[j];
+      var dx = b.x - a.x, dy = b.y - a.y;
+      var d = Math.hypot(dx, dy);
+      if (d === 0 || d > BALL_R * 2) continue;
+      var overlap = (BALL_R * 2 - d) / 2;
+      var nx = dx / d, ny = dy / d;
+      a.x -= nx * overlap; a.y -= ny * overlap;
+      b.x += nx * overlap; b.y += ny * overlap;
+      var dvx = b.vx - a.vx, dvy = b.vy - a.vy;
+      var sep = dvx * nx + dvy * ny;
+      if (sep > 0) continue;
+      a.vx += sep * nx; a.vy += sep * ny;
+      b.vx -= sep * nx; b.vy -= sep * ny;
+      clampSpeed(a);
+      clampSpeed(b);
+      spawnParticles(a.x + nx * BALL_R, a.y + ny * BALL_R, a.color, 6);
+      spawnParticles(b.x - nx * BALL_R, b.y - ny * BALL_R, b.color, 6);
+
+      if (teamOf(i) === teamOf(j)) continue;
+      for (var attackerOffset = 0; attackerOffset < 2; attackerOffset++) {
+        var attacker = attackerOffset === 0 ? i : j;
+        var target = attackerOffset === 0 ? j : i;
+        var attackerRole = ROLES[selected[attacker]].role;
+        if (bumpLock[attacker] > 0) continue;
+        if (attackerRole === 'shield') {
+          dealDamage(target, ROLE_SHIELD_BUMP, balls[attacker].color,
+            balls[attacker].x, balls[attacker].y, attacker);
+          bumpLock[attacker] = 0.4;
+        } else if (attackerRole === 'splitter') {
+          // BOSS 分裂体：撞击敌方造成 3 伤，带 0.4 秒伤害锁
+          var splitterRole = ROLES[selected[attacker]];
+          dealDamage(target, splitterRole.bumpDamage || ROLE_SPLIT_BUMP_DMG,
+            balls[attacker].color, balls[attacker].x, balls[attacker].y, attacker);
+          bumpLock[attacker] = ROLE_SPLIT_BUMP_LOCK;
+        } else if (attackerRole === 'vampire') {
+          var damage = ROLE_VAMPIRE_DMG_MIN +
+            Math.floor(Math.random() * (ROLE_VAMPIRE_DMG_MAX - ROLE_VAMPIRE_DMG_MIN + 1));
+          dealDamage(target, damage, balls[attacker].color,
+            balls[attacker].x, balls[attacker].y, attacker);
+          hp[attacker] = Math.min(ROLES[selected[attacker]].maxHp, hp[attacker] + damage);
+          floatTexts.push({
+            x: balls[attacker].x, y: balls[attacker].y - 22,
+            text: '+' + damage, life: 1, color: '#ff2d6f'
+          });
+          spawnParticles(balls[attacker].x, balls[attacker].y, '#ff2d6f', 12);
+          bumpLock[attacker] = ROLE_VAMPIRE_LOCK;
+          var angle = Math.random() * Math.PI * 2;
+          var speed = BALL_SPEED * (0.85 + Math.random() * 0.15);
+          balls[attacker].vx = Math.cos(angle) * speed;
+          balls[attacker].vy = Math.sin(angle) * speed;
+        }
+        if (finished) return;
+      }
+    }
+  }
+}
+
+/* ============ 绘制 ============ */
+function drawBackground() {
+  ctx.fillStyle = '#0b1020';
+  ctx.fillRect(0, 0, W, H);
+  var cx = ARENA.x + ARENA.size / 2;
+  var cy = ARENA.y + ARENA.size / 2;
+  var g = ctx.createRadialGradient(cx, cy, 50, cx, cy, ARENA.size * 0.7);
+  g.addColorStop(0, 'rgba(79,195,255,.06)');
+  g.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(ARENA.x, ARENA.y, ARENA.size, ARENA.size);
+  ctx.strokeStyle = 'rgba(255,255,255,.045)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (var x = ARENA.x; x <= ARENA.x + ARENA.size; x += 40) {
+    ctx.moveTo(x, ARENA.y); ctx.lineTo(x, ARENA.y + ARENA.size);
+  }
+  for (var y = ARENA.y; y <= ARENA.y + ARENA.size; y += 40) {
+    ctx.moveTo(ARENA.x, y); ctx.lineTo(ARENA.x + ARENA.size, y);
+  }
+  ctx.stroke();
+  ctx.strokeStyle = 'rgba(255,255,255,.08)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(cx, ARENA.y + 10); ctx.lineTo(cx, ARENA.y + ARENA.size - 10);
+  ctx.moveTo(ARENA.x + 10, cy); ctx.lineTo(ARENA.x + ARENA.size - 10, cy);
+  ctx.stroke();
+  ctx.strokeStyle = 'rgba(255,255,255,.12)';
+  ctx.beginPath();
+  ctx.arc(cx, cy, 30, 0, Math.PI * 2);
+  ctx.stroke();
+}
+
+function drawArena() {
+  ctx.lineJoin = 'round';
+  ctx.shadowColor = 'rgba(79,195,255,.5)';
+  ctx.shadowBlur = 18;
+  ctx.strokeStyle = 'rgba(120,180,255,.9)';
+  ctx.lineWidth = ARENA.thickness;
+  ctx.strokeRect(ARENA.x, ARENA.y, ARENA.size, ARENA.size);
+  ctx.shadowBlur = 0;
+}
+
+function drawBall(b, index) {
+  // 队徽按“队伍”判定，而不是按球对象身份：
+  // 1v1 时 teamOf(0)=0、teamOf(1)=1；2v2 时 0/2 号是蓝方、1/3 号是粉方，
+  // 这样两个同队小球外观一致，不会出现“蓝 2 号被当成粉方”的情况。
+  var pos = index != null ? index : balls.indexOf(b);
+  var isBlue = teamOf(pos) === 0;
+  ctx.beginPath();
+  ctx.arc(b.x, b.y, BALL_R + 8, 0, Math.PI * 2);
+  var g = ctx.createRadialGradient(b.x, b.y, BALL_R, b.x, b.y, BALL_R + 8);
+  g.addColorStop(0, b.glow);
+  g.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = g;
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(b.x, b.y, BALL_R, 0, Math.PI * 2);
+  var lg = ctx.createLinearGradient(b.x - BALL_R, b.y - BALL_R, b.x + BALL_R, b.y + BALL_R);
+  if (b.gradient) {
+    // 渐变球（吸血舰长）：等效于 CSS linear-gradient，红 → 紫 → 蓝
+    var stops = b.gradient;
+    for (var gi = 0; gi < stops.length; gi++) {
+      lg.addColorStop(stops.length === 1 ? 0 : gi / (stops.length - 1), stops[gi]);
+    }
+    // 左上角压一点白色高光，保持和其他球的立体感一致
+    var shine = ctx.createRadialGradient(
+      b.x - BALL_R * 0.4, b.y - BALL_R * 0.4, 1,
+      b.x - BALL_R * 0.4, b.y - BALL_R * 0.4, BALL_R * 1.4);
+    shine.addColorStop(0, 'rgba(255,255,255,.55)');
+    shine.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = lg;
+    ctx.fill();
+    ctx.fillStyle = shine;
+    ctx.fill();
+  } else {
+    lg.addColorStop(0, '#ffffff');
+    lg.addColorStop(0.35, b.color);
+    lg.addColorStop(1, shade(b.color, -0.35));
+    ctx.fillStyle = lg;
+    ctx.fill();
+  }
+  ctx.lineWidth = 2.5;
+  ctx.strokeStyle = isBlue ? 'rgba(255,255,255,.9)' : 'rgba(0,0,0,.35)';
+  ctx.stroke();
+  // 队徽：蓝方为三角，粉方为菱形，一眼区分
+  ctx.beginPath();
+  if (isBlue) {
+    ctx.moveTo(b.x, b.y - 6);
+    ctx.lineTo(b.x - 5.5, b.y + 3.5);
+    ctx.lineTo(b.x + 5.5, b.y + 3.5);
+  } else {
+    ctx.moveTo(b.x, b.y - 6);
+    ctx.lineTo(b.x + 6, b.y);
+    ctx.lineTo(b.x, b.y + 6);
+    ctx.lineTo(b.x - 6, b.y);
+  }
+  ctx.closePath();
+  ctx.fillStyle = 'rgba(255,255,255,.92)';
+  ctx.fill();
+}
+
+
+function drawDynamites() {
+  for (var i = 0; i < dynamites.length; i++) {
+    var d = dynamites[i];
+    var t = 1 - d.fuse / d.fuseMax;   // 0 → 1，引信越短越亮
+    // 爆炸范围预览圈：爆破手系与算式炸药共用，半径取该发炸药的爆炸半径（默认 120px）
+    // 引信越短圈越亮；飞行中就能看出这一发会波及到哪
+    var rangeRadius = d.radius != null ? d.radius : ROLE_DYN_RADIUS;
+    var rangeColor = d.color ||
+      (balls[d.owner] && balls[d.owner].color) || '#ff8a3d';
+    ctx.beginPath();
+    ctx.arc(d.x, d.y, rangeRadius, 0, Math.PI * 2);
+    ctx.strokeStyle = rangeColor;
+    ctx.globalAlpha = d.math ? (0.22 + 0.18 * t) : (0.13 + 0.17 * t);
+    ctx.lineWidth = d.math ? 2 : 1.5;
+    ctx.setLineDash([6, 8]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.globalAlpha = 1;
+    // 半径由算式决定的版本（爆破数学家V2）：在圈底标出这一发的实际半径
+    if (d.radiusFromFormula) {
+      var radiusLabelY = Math.min(d.y + rangeRadius + 12, ARENA.y + ARENA.size - 4);
+      ctx.font = 'bold 10px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillStyle = rangeColor;
+      ctx.globalAlpha = 0.9;
+      ctx.fillText(Math.round(rangeRadius) + 'px', d.x, radiusLabelY);
+      ctx.textAlign = 'left';
+      ctx.globalAlpha = 1;
+    }
+    // 引信火花
+    ctx.beginPath();
+    ctx.arc(d.x, d.y - d.r - 4, 2.4, 0, Math.PI * 2);
+    ctx.fillStyle = '#fff3c4';
+    ctx.shadowColor = '#ffb347';
+    ctx.shadowBlur = 10;
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    // 药体
+    ctx.beginPath();
+    ctx.arc(d.x, d.y, d.r, 0, Math.PI * 2);
+    var grd = ctx.createRadialGradient(d.x - 3, d.y - 3, 1, d.x, d.y, d.r);
+    if (d.math) {
+      grd.addColorStop(0, '#ffd9fb');
+      grd.addColorStop(1, '#6b2a86');
+    } else {
+      grd.addColorStop(0, '#ffd28a');
+      grd.addColorStop(1, '#c1440a');
+    }
+    ctx.fillStyle = grd;
+    ctx.fill();
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = d.math ? '#3d1152' : '#7a2c06';
+    ctx.stroke();
+    // 算式炸药：药体上标出这一发将造成的伤害
+    if (d.math) {
+      ctx.font = 'bold 10px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(formatMathNumber(d.dmg || 0), d.x, d.y + 3.5);
+      ctx.textAlign = 'left';
+    }
+    // 倒计时环（引信进度）
+    ctx.beginPath();
+    ctx.arc(d.x, d.y, d.r + 4, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * t);
+    ctx.strokeStyle = t > 0.66 ? '#ff4d2e' : '#ffb347';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }
+}
+
+function drawTrains() {
+  if (!trains.length) return;
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(ARENA.x, ARENA.y, ARENA.size, ARENA.size);
+  ctx.clip();
+
+  for (var i = 0; i < trains.length; i++) {
+    var train = trains[i];
+    var color = ROLES[selected[train.owner]].color;
+    ctx.save();
+    ctx.translate(train.x, train.y);
+    if (train.axis === 'vertical') ctx.rotate(Math.PI / 2);
+
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 12;
+    ctx.fillStyle = '#20283b';
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.roundRect(-train.length / 2, -train.width / 2, train.length, train.width, 7);
+    ctx.fill();
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    ctx.fillStyle = color;
+    ctx.fillRect(-train.length / 2 + 8, -train.width / 2 + 6, 20, train.width - 12);
+    ctx.fillRect(train.length / 2 - 28, -train.width / 2 + 6, 20, train.width - 12);
+    ctx.fillStyle = 'rgba(255,255,255,.85)';
+    for (var windowX = -train.length / 2 + 38;
+         windowX < train.length / 2 - 34;
+         windowX += 32) {
+      ctx.fillRect(windowX, -train.width / 2 + 6, 22, train.width - 12);
+    }
+
+    ctx.fillStyle = '#161b29';
+    for (var wheel = -2; wheel <= 2; wheel++) {
+      ctx.beginPath();
+      ctx.arc(wheel * 34, train.width / 2 - 1, 3.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+  ctx.restore();
+}
+
+function drawBullets() {
+  for (var i = 0; i < bullets.length; i++) {
+    var bl = bullets[i];
+    ctx.beginPath();
+    ctx.arc(bl.x, bl.y, BULLET_R + 5, 0, Math.PI * 2);
+    var g = ctx.createRadialGradient(bl.x, bl.y, 1, bl.x, bl.y, BULLET_R + 5);
+    g.addColorStop(0, bl.color);
+    g.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = g;
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(bl.x, bl.y, BULLET_R, 0, Math.PI * 2);
+    ctx.fillStyle = bl.kind === 'heal' ? '#67e8a5' : '#fff';
+    ctx.fill();
+    if (bl.kind === 'heal') {
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(bl.x - 3, bl.y);
+      ctx.lineTo(bl.x + 3, bl.y);
+      ctx.moveTo(bl.x, bl.y - 3);
+      ctx.lineTo(bl.x, bl.y + 3);
+      ctx.stroke();
+    }
+  }
+}
+
+function drawParticles() {
+  for (var i = 0; i < particles.length; i++) {
+    var p = particles[i];
+    ctx.globalAlpha = Math.max(0, p.life);
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 2.5 * p.life + 0.5, 0, Math.PI * 2);
+    ctx.fillStyle = p.color;
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawFloatTexts() {
+  ctx.textAlign = 'center';
+  ctx.font = 'bold 18px sans-serif';
+  for (var i = 0; i < floatTexts.length; i++) {
+    var f = floatTexts[i];
+    ctx.globalAlpha = Math.max(0, Math.min(1, f.life));
+    ctx.fillStyle = f.color;
+    ctx.fillText(f.text, f.x, f.y);
+  }
+  ctx.globalAlpha = 1;
+}
+
+// 舰长同款技能可视化：球顶双环
+// 外环 = 冷却 / 技能持续时长（灰底 + 主色填充，满环=刚释放）
+// 内环 = 当前效果剩余时长（彩色高亮，带脉冲发光）
+function drawSkillRing(b) {
+  var p = balls.indexOf(b);
+  if (p < 0) return;
+  var role = ROLES[selected[p]].role;
+  var cx = b.x, cy = b.y - BALL_R - 16;
+  var coolFrac = 0, coolMax = 0, coolColor = '#4fc3ff', coolLabel = '';
+  var actFrac = 0, actMax = 0, actColor = '#ffd54a', actLabel = '', actGlow = false;
+
+  if (role === 'hook') {
+    var h = hook[p];
+    if (h && h.released && h.cd > 0) {
+      coolFrac = h.cd / ROLE_HOOK_COOLDOWN; coolMax = ROLE_HOOK_COOLDOWN;
+      coolColor = '#ff8a65'; coolLabel = h.cd.toFixed(1) + 's';
+    } else if (h && !h.released && h.hooked) {
+      coolFrac = h.t / ROLE_HOOK_SPIN; coolMax = ROLE_HOOK_SPIN;
+      coolColor = '#1f9ea8'; coolLabel = h.t.toFixed(1) + 's';
+    }
+  } else if (role === 'gun') {
+    if (cd[p] > 0) {
+      coolFrac = cd[p] / ROLE_GUN_CD; coolMax = ROLE_GUN_CD;
+      coolColor = '#ffb74d'; coolLabel = cd[p].toFixed(1) + 's';
+    }
+  } else if (role === 'dispatcher') {
+    if (cd[p] > 0) {
+      coolFrac = cd[p] / ROLE_DISPATCHER_CD; coolMax = ROLE_DISPATCHER_CD;
+      coolColor = '#ffd166'; coolLabel = cd[p].toFixed(1) + 's';
+    }
+  } else if (role === 'dynamite') {
+    if (cd[p] > 0) {
+      coolMax = ROLES[selected[p]].cd || 10; coolFrac = cd[p] / coolMax;
+      coolColor = '#ff7043'; coolLabel = cd[p].toFixed(1) + 's';
+    }
+  } else if (role === 'cowboy') {
+    if (b.cowboyIdx != null && b.cowboyIdx < ROLE_COWBOY_SHOTS) {
+      actMax = ROLE_COWBOY_PAUSE; actFrac = 1 - Math.max(0, b.cowboyNext) / actMax;
+      actColor = '#ff7043'; actLabel = (b.cowboyIdx + 1) + '/' + ROLE_COWBOY_SHOTS; actGlow = true;
+    }
+    if (cd[p] > 0) {
+      coolFrac = cd[p] / ROLE_COWBOY_CD; coolMax = ROLE_COWBOY_CD;
+      coolColor = '#ff7043'; coolLabel = cd[p].toFixed(1) + 's';
+    }
+  } else if (role === 'gunner') {
+    if (cd[p] > 0) {
+      coolFrac = cd[p] / ROLE_GUNNER_CD; coolMax = ROLE_GUNNER_CD;
+      coolColor = '#4fc3ff'; coolLabel = cd[p].toFixed(1) + 's';
+    }
+  } else if (role === 'ghost') {
+    var gp = b.ghostPhase || 'cooldown', gt = b.ghostT || 0;
+    if (gp === 'warp') {
+      actMax = ROLE_GHOST_WARP; actFrac = gt / actMax;
+      actColor = '#b388ff'; actLabel = gt.toFixed(1) + 's'; actGlow = true;
+    }
+    if (gp === 'cooldown') {
+      coolMax = ROLE_GHOST_CD; coolFrac = gt / coolMax;
+      coolColor = '#b388ff'; coolLabel = gt.toFixed(1) + 's';
+    } else if (gp === 'ready') {
+      coolMax = ROLE_GHOST_CD; coolFrac = 0;
+      coolColor = '#9be7ff'; coolLabel = '受击';
+    }
+  } else if (role === 'medic') {
+    if (b.medicRevivePhase === 'charging') {
+      // 复活蓄力优先显示（30 秒环）
+      actMax = ROLE_MEDIC_REVIVE_CHARGE;
+      actFrac = 1 - Math.max(0, b.medicReviveT) / actMax;
+      actColor = '#67e8a5'; actLabel = '复活'; actGlow = true;
+    } else if (b.medicPhase === 'cooldown') {
+      coolMax = ROLE_MEDIC_CD; coolFrac = b.medicT / coolMax;
+      coolColor = '#67e8a5'; coolLabel = b.medicT.toFixed(1) + 's';
+    } else if (b.medicPhase === 'ready') {
+      coolMax = ROLE_MEDIC_CD; coolColor = '#67e8a5'; coolLabel = '待触发';
+    } else if (b.medicPhase === 'charge') {
+      actMax = ROLE_MEDIC_CHARGE;
+      actFrac = 1 - Math.max(0, b.medicT) / actMax;
+      actColor = '#67e8a5'; actLabel = b.medicT.toFixed(1) + 's'; actGlow = true;
+    }
+  } else if (role === 'mathematician') {
+    if (b.mathPhase === 'cooldown') {
+      coolMax = ROLE_MATH_CD; coolFrac = b.mathT / coolMax;
+      coolColor = '#f0d66d'; coolLabel = b.mathT.toFixed(1) + 's';
+    } else if (b.mathPhase === 'charge') {
+      actMax = ROLE_MATH_CHARGE;
+      actFrac = 1 - Math.max(0, b.mathT) / actMax;
+      actColor = '#f0d66d'; actLabel = b.mathT.toFixed(1) + 's'; actGlow = true;
+    }
+  } else if (role === 'dynmath') {
+    if (b.dynmathPhase === 'cooldown') {
+      coolMax = ROLE_DYNMATH_CD; coolFrac = b.dynmathT / coolMax;
+      coolColor = ROLES[selected[p]].color; coolLabel = b.dynmathT.toFixed(1) + 's';
+    } else if (b.dynmathPhase === 'charge') {
+      actMax = ROLE_DYNMATH_CHARGE;
+      actFrac = 1 - Math.max(0, b.dynmathT) / actMax;
+      actColor = ROLES[selected[p]].color; actLabel = b.dynmathT.toFixed(1) + 's'; actGlow = true;
+    }
+  } else if (role === 'physicist') {
+    if (b.physPhase === 'active') {
+      actMax = ROLE_PHYS_DURATION;
+      actFrac = Math.max(0, b.physT) / actMax;
+      actColor = ROLES[selected[p]].color; actLabel = b.physT.toFixed(1) + 's'; actGlow = true;
+    } else if (b.physT > 0) {
+      coolMax = ROLE_PHYS_CD; coolFrac = b.physT / coolMax;
+      coolColor = ROLES[selected[p]].color; coolLabel = b.physT.toFixed(1) + 's';
+    }
+  } else if (role === 'virus') {
+    // 病毒：只显示放罐冷却
+    if (cd[p] > 0) {
+      coolMax = ROLE_VIRUS_CD; coolFrac = cd[p] / coolMax;
+      coolColor = ROLES[selected[p]].color; coolLabel = cd[p].toFixed(1) + 's';
+    }
+  } else if (role === 'guard') {
+    // 保安：无冷却，用内环提示“正在拉线”
+    if (b.guardStage === 'first') {
+      actMax = 1; actFrac = 1;
+      actColor = ROLES[selected[p]].color; actLabel = '拉线'; actGlow = true;
+    }
+  } else if (role === 'splitter') {
+    var spRole = ROLES[selected[p]];
+    // 环里显示这颗球当前的血量（向下取整，避免 49.5 显示成 50 造成误判）
+    // 环的进度与颜色仍然表达状态：橙=禁疗中、青=回血中/满血
+    var hpLabel = String(Math.floor(hp[p]));
+    if (b.splitNoRegenT > 0) {
+      // 分裂后的禁疗期
+      actMax = spRole.noRegenAfterSplit;
+      actFrac = 1 - Math.max(0, b.splitNoRegenT) / actMax;
+      actColor = '#ff7043'; actLabel = hpLabel; actGlow = true;
+    } else if (hp[p] >= spRole.maxHp) {
+      // 满血：等待下一次分裂判定
+      coolMax = bossSplitInterval();
+      coolFrac = Math.max(0, bossSplitT) / coolMax;
+      coolColor = '#7cf5c8'; coolLabel = hpLabel;
+    } else {
+      // 回血中
+      coolMax = spRole.regenInterval;
+      coolFrac = 1 - Math.max(0, b.splitRegenT) / coolMax;
+      coolColor = '#7cf5c8'; coolLabel = hpLabel;
+    }
+  }
+  if (!coolMax && !actMax) return;
+
+  var R1 = 9, R2 = 6, lw1 = 2.6, lw2 = 2.4, start = -Math.PI / 2;
+
+  if (coolMax) {
+    ctx.beginPath();
+    ctx.arc(cx, cy, R1, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(255,255,255,.12)';
+    ctx.lineWidth = lw1;
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(cx, cy, R1, start, start + Math.PI * 2 * Math.min(1, Math.max(0, coolFrac)));
+    ctx.strokeStyle = coolColor;
+    ctx.lineWidth = lw1;
+    ctx.lineCap = 'round';
+    ctx.stroke();
+    ctx.lineCap = 'butt';
+  }
+  if (actMax) {
+    if (actGlow) {
+      ctx.beginPath();
+      ctx.arc(cx, cy, R2 - 3, 0, Math.PI * 2);
+      ctx.fillStyle = actColor;
+      ctx.globalAlpha = 0.35 + 0.35 * Math.sin(globalTime * 6);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+    ctx.beginPath();
+    ctx.arc(cx, cy, R2, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(255,255,255,.12)';
+    ctx.lineWidth = lw2;
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(cx, cy, R2, start, start + Math.PI * 2 * Math.min(1, Math.max(0, actFrac)));
+    ctx.strokeStyle = actColor;
+    ctx.lineWidth = lw2;
+    ctx.lineCap = 'round';
+    ctx.stroke();
+    ctx.lineCap = 'butt';
+  }
+  if (coolLabel || actLabel) {
+    ctx.font = 'bold 9px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = actLabel ? actColor : coolColor;
+    ctx.fillText(actLabel || coolLabel, cx, cy + 3.2);
+    ctx.textAlign = 'left';
+  }
+}
+
+// 血量条下的技能文字标签：复刻 drawHUD 中 drawBar 的样式
+function drawSkillLabel(b, x, y, main, sub) {
+  if (main == null || main === '') return;
+  ctx.save();
+  ctx.font = 'bold 12px sans-serif';
+  var w = ctx.measureText(String(main)).width + 12;
+  ctx.textAlign = 'center';
+  ctx.fillStyle = 'rgba(13,16,24,.75)';
+  ctx.beginPath();
+  ctx.rect(x - w / 2 - 4, y - 12, w + 8, 16);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,.2)';
+  ctx.stroke();
+  ctx.fillStyle = '#fff';
+  ctx.fillText(main, x, y - 1);
+  if (sub) {
+    ctx.font = '9px sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillStyle = 'rgba(255,255,255,.65)';
+    ctx.fillText(sub, x + w / 2 + 6, y - 1);
+  }
+  ctx.restore();
+}
+
+// 根据角色与技能状态生成标签文字
+function getSkillLabel(b) {
+  var p = balls.indexOf(b);
+  if (p < 0) return null;
+  var role = ROLES[selected[p]].role, main = null, sub = null;
+  if (role === 'hook') {
+    var h = hook[p];
+    if (h && h.released && h.cd > 0) { main = h.cd.toFixed(1) + 's'; sub = '船锚冷却'; }
+    else if (h && !h.released && h.hooked) { main = h.t.toFixed(1) + 's'; sub = '被钩住'; }
+    else if (h && !h.released) { main = '旋转中'; sub = '船锚'; }
+  } else if (role === 'gun') {
+    if (cd[p] > 0) { main = cd[p].toFixed(1) + 's'; sub = '点射'; }
+    else { main = '就绪'; sub = '点射'; }
+  } else if (role === 'gunner') {
+    if (cd[p] > 0) { main = cd[p].toFixed(1) + 's'; sub = '点射'; }
+    else { main = '就绪'; sub = '点射'; }
+  } else if (role === 'dispatcher') {
+    if (cd[p] > 0) { main = cd[p].toFixed(1) + 's'; sub = '列车调度'; }
+    else { main = '就绪'; sub = '列车调度'; }
+  } else if (role === 'dynamite') {
+    if (cd[p] > 0) { main = cd[p].toFixed(1) + 's'; sub = '炸弹'; }
+    else { main = '就绪'; sub = '炸弹'; }
+  } else if (role === 'cowboy') {
+    if (cd[p] > 0) { main = cd[p].toFixed(1) + 's'; sub = '齐射'; }
+    else { main = '就绪'; sub = '齐射'; }
+  } else if (role === 'cannon') {
+    if (cd[p] > 0) { main = cd[p].toFixed(1) + 's'; sub = '蓄力'; }
+    else { main = '就绪'; sub = '蓄力'; }
+  } else if (role === 'ghost') {
+    var gp = b.ghostPhase || 'cooldown', gt = b.ghostT || 0;
+    if (gp === 'warp') { main = gt.toFixed(1) + 's'; sub = '减伤反击'; }
+    else if (gp === 'ready') { main = '受击触发'; sub = '技能就绪'; }
+    else { main = gt.toFixed(1) + 's'; sub = '技能冷却'; }
+  } else if (role === 'medic') {
+    if (b.medicPhase === 'cooldown') { main = b.medicT.toFixed(1) + 's'; sub = '援护冷却'; }
+    else if (b.medicPhase === 'ready') { main = '等待队友'; sub = '造成伤害'; }
+    else if (b.medicPhase === 'charge') {
+      main = b.medicT.toFixed(1) + 's';
+      sub = '治疗 ' + formatMathNumber(b.medicDamage * ROLE_MEDIC_HEAL);
+    }
+  } else if (role === 'mathematician') {
+    if (b.mathPhase === 'cooldown') { main = b.mathT.toFixed(1) + 's'; sub = '算式冷却'; }
+    else if (b.mathPhase === 'charge') {
+      main = mathExpressionText(b.mathExpression);
+      sub = '蓄力 ' + b.mathT.toFixed(1) + 's';
+    }
+  } else if (role === 'dynmath') {
+    if (b.dynmathPhase === 'cooldown') { main = b.dynmathT.toFixed(1) + 's'; sub = '算式炸弹冷却'; }
+    else if (b.dynmathPhase === 'charge') {
+      main = mathExpressionText(b.dynmathExpression);
+      sub = '蓄力 ' + b.dynmathT.toFixed(1) + 's';
+    }
+  } else if (role === 'physicist') {
+    if (b.physPhase === 'active') { main = b.physT.toFixed(1) + 's'; sub = physKindName(b.physKind); }
+    else { main = Math.max(0, b.physT).toFixed(1) + 's'; sub = '场域冷却'; }
+  } else if (role === 'virus') {
+    if (cd[p] > 0) { main = cd[p].toFixed(1) + 's'; sub = '放罐冷却'; }
+    else { main = '就绪'; sub = '病毒罐'; }
+  } else if (role === 'guard') {
+    main = b.guardStage === 'first' ? '拉线中' : '待碰墙';
+    sub = '警戒线 ×' + guardLines.filter(function (l) { return l.team === teamOf(p); }).length;
+  }
+  if (main) return { main: main, sub: sub };
+  return null;
+}
+
+function render() {
+  drawBackground();
+  drawArena();
+  drawTrains();
+  drawPhysFields();
+  drawVirusJars();
+  for (var i = 0; i < balls.length; i++) {
+    if (hp[i] > 0) drawBall(balls[i], i);
+  }
+  drawHooks();
+  drawDynamites();
+  drawBullets();
+  drawPhysLasers();
+  drawGuardLines();
+  for (var i = 0; i < balls.length; i++) {
+    if (hp[i] > 0) drawSkillRing(balls[i]);
+  }
+  drawParticles();
+  drawFloatTexts();
+}
+
+/* ============ 病毒罐绘制 ============ */
+
+function drawVirusJars() {
+  for (var j = 0; j < virusJars.length; j++) {
+    var jar = virusJars[j];
+    var pulse = 0.5 + 0.5 * Math.sin(globalTime * 6 + j);
+    ctx.save();
+    // 底部光晕
+    ctx.beginPath();
+    ctx.arc(jar.x, jar.y, jar.r + 8, 0, Math.PI * 2);
+    var g = ctx.createRadialGradient(jar.x, jar.y, jar.r * 0.4, jar.x, jar.y, jar.r + 8);
+    g.addColorStop(0, 'rgba(166,226,46,' + (0.35 + 0.2 * pulse) + ')');
+    g.addColorStop(1, 'rgba(166,226,46,0)');
+    ctx.fillStyle = g;
+    ctx.fill();
+    // 罐体
+    ctx.beginPath();
+    ctx.arc(jar.x, jar.y, jar.r, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(22,32,14,.92)';
+    ctx.fill();
+    ctx.strokeStyle = jar.color;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    // 液面
+    ctx.beginPath();
+    ctx.arc(jar.x, jar.y + 2, jar.r * 0.62, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(166,226,46,' + (0.55 + 0.3 * pulse) + ')';
+    ctx.fill();
+    // 生物危害三角
+    ctx.beginPath();
+    ctx.moveTo(jar.x, jar.y - 7);
+    ctx.lineTo(jar.x + 6.5, jar.y + 4);
+    ctx.lineTo(jar.x - 6.5, jar.y + 4);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(20,26,12,.85)';
+    ctx.fill();
+    // 剩余可碰次数（只有多段可碰时才显示；一碰即碎时不画数字）
+    if (ROLE_VIRUS_JAR_HITS > 1) {
+      ctx.font = 'bold 9px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(String(ROLE_VIRUS_JAR_HITS - jar.hits), jar.x, jar.y + 12);
+      ctx.textAlign = 'left';
+    }
+    ctx.restore();
+  }
+}
+
+/* ============ 保安警戒线绘制 ============ */
+
+function drawGuardLines() {
+  // 已完成且永久保留的线
+  for (var l = 0; l < guardLines.length; l++) {
+    var line = guardLines[l];
+    ctx.save();
+    ctx.shadowColor = line.color || '#7c8cff';
+    ctx.shadowBlur = 8;
+    ctx.strokeStyle = line.color || '#7c8cff';
+    ctx.lineWidth = 2.4;
+    ctx.beginPath();
+    ctx.moveTo(line.x1, line.y1);
+    ctx.lineTo(line.x2, line.y2);
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+    // 双端固定点
+    ctx.fillStyle = 'rgba(255,255,255,.9)';
+    ctx.beginPath(); ctx.arc(line.x1, line.y1, 3.2, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(line.x2, line.y2, 3.2, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+  // 正在拉的那根：从墙面端点连到球上
+  for (var i = 0; i < balls.length; i++) {
+    var b = balls[i];
+    if (hp[i] <= 0) continue;
+    if (b.guardStage !== 'first' || !b.guardPoint) continue;
+    var color = ROLES[selected[i]].color;
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.globalAlpha = 0.8;
+    ctx.lineWidth = 1.8;
+    ctx.setLineDash([5, 6]);
+    ctx.beginPath();
+    ctx.moveTo(b.guardPoint.x, b.guardPoint.y);
+    ctx.lineTo(b.x, b.y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = color;
+    ctx.beginPath(); ctx.arc(b.guardPoint.x, b.guardPoint.y, 3.5, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+}
+
+/* ============ 物理学家场域绘制 ============ */
+
+function physFade(field) {
+  // 最后 0.6 秒淡出，开局 0.25 秒淡入
+  var fadeIn = Math.min(1, (ROLE_PHYS_DURATION - field.t) / 0.25);
+  var fadeOut = Math.min(1, field.t / 0.6);
+  return Math.max(0, Math.min(fadeIn, fadeOut));
+}
+
+function drawPhysFields() {
+  for (var f = 0; f < physFields.length; f++) {
+    var field = physFields[f];
+    var fade = physFade(field);
+    if (field.kind === 1) drawElectricField(field, fade);
+    else if (field.kind === 2) drawGravityField(field, fade);
+  }
+}
+
+// 技能1：方形电场 + 内部闪电 + 场心电磁铁
+function drawElectricField(field, fade) {
+  var left = field.x, top = field.y, side = field.side;
+  var pulse = 0.5 + 0.5 * Math.sin(globalTime * 5);
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(left, top, side, side);
+  ctx.fillStyle = 'rgba(34,211,238,' + (0.07 + 0.05 * pulse) * fade + ')';
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(120,240,255,' + 0.8 * fade + ')';
+  ctx.lineWidth = 2;
+  ctx.setLineDash([10, 8]);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  // 内部电流纹路
+  ctx.beginPath();
+  ctx.strokeStyle = 'rgba(190,250,255,' + 0.45 * fade + ')';
+  ctx.lineWidth = 1.2;
+  for (var k = 0; k < 3; k++) {
+    var yk = top + side * (0.3 + k * 0.2);
+    var pts = 7;
+    ctx.moveTo(left + 8, yk);
+    for (var p = 1; p <= pts; p++) {
+      var px = left + 8 + (side - 16) * p / pts;
+      var py = yk + Math.sin(globalTime * 7 + p * 1.7 + k * 2.1) * 7;
+      ctx.lineTo(px, py);
+    }
+  }
+  ctx.stroke();
+  // 电磁铁：红蓝两极的圆形磁体
+  var cx = field.cx, cy = field.cy;
+  var scale = 1 + 0.06 * Math.sin(globalTime * 9);
+  ctx.translate(cx, cy);
+  ctx.scale(scale, scale);
+  ctx.beginPath();
+  ctx.arc(0, 0, 15, Math.PI, Math.PI * 2);
+  ctx.closePath();
+  ctx.fillStyle = 'rgba(248,113,113,' + 0.92 * fade + ')';
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(0, 0, 15, 0, Math.PI);
+  ctx.closePath();
+  ctx.fillStyle = 'rgba(96,165,250,' + 0.92 * fade + ')';
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(0, 0, 15, 0, Math.PI * 2);
+  ctx.strokeStyle = 'rgba(255,255,255,' + 0.9 * fade + ')';
+  ctx.lineWidth = 1.6;
+  ctx.stroke();
+  ctx.font = 'bold 11px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillStyle = 'rgba(255,255,255,' + 0.95 * fade + ')';
+  ctx.fillText('N', 0, -5);
+  ctx.fillText('S', 0, 10);
+  ctx.textAlign = 'left';
+  ctx.restore();
+}
+
+// 技能2：全场箭头指向目标墙
+function drawGravityField(field, fade) {
+  var cx = ARENA.x + ARENA.size / 2, cy = ARENA.y + ARENA.size / 2;
+  var half = ARENA.size / 2;
+  ctx.save();
+  // 沿方向铺一层渐变，越靠目标墙越亮
+  var g = ctx.createLinearGradient(
+    cx - field.dx * half, cy - field.dy * half,
+    cx + field.dx * half, cy + field.dy * half
+  );
+  g.addColorStop(0, 'rgba(34,211,238,0)');
+  g.addColorStop(1, 'rgba(34,211,238,' + 0.18 * fade + ')');
+  ctx.fillStyle = g;
+  ctx.fillRect(ARENA.x, ARENA.y, ARENA.size, ARENA.size);
+  // 三排箭头
+  var flow = (globalTime * 120) % 60;
+  for (var i = -1; i <= 1; i++) {
+    for (var step = 0; step < 5; step++) {
+      var along = -half + ((step * 60 + flow) % (ARENA.size - 20)) + 10;
+      var ox = cx + field.dx * along - field.dy * (i * 120);
+      var oy = cy + field.dy * along + field.dx * (i * 120);
+      var size = 13;
+      ctx.beginPath();
+      ctx.moveTo(ox - field.dx * size, oy - field.dy * size);
+      ctx.lineTo(ox + field.dx * size - field.dy * size * 0.9, oy + field.dy * size + field.dx * size * 0.9);
+      ctx.lineTo(ox + field.dx * size + field.dy * size * 0.9, oy + field.dy * size - field.dx * size * 0.9);
+      ctx.closePath();
+      ctx.fillStyle = 'rgba(165,243,252,' + 0.5 * fade + ')';
+      ctx.fill();
+    }
+  }
+  // 目标墙高亮
+  var wallX = field.dx > 0 ? ARENA.x + ARENA.size : field.dx < 0 ? ARENA.x : null;
+  var wallY = field.dy > 0 ? ARENA.y + ARENA.size : field.dy < 0 ? ARENA.y : null;
+  ctx.beginPath();
+  if (wallX !== null) { ctx.moveTo(wallX, ARENA.y); ctx.lineTo(wallX, ARENA.y + ARENA.size); }
+  else { ctx.moveTo(ARENA.x, wallY); ctx.lineTo(ARENA.x + ARENA.size, wallY); }
+  ctx.strokeStyle = 'rgba(34,211,238,' + 0.85 * fade + ')';
+  ctx.lineWidth = 5;
+  ctx.stroke();
+  ctx.restore();
+}
+
+// 技能3：镜面 + 激光光路（画在球与子弹之上，看得清）
+function drawPhysLasers() {
+  for (var f = 0; f < physFields.length; f++) {
+    var field = physFields[f];
+    if (field.kind !== 3) continue;
+    var fade = physFade(field);
+    ctx.save();
+    // 光线
+    ctx.shadowColor = 'rgba(255,70,110,' + 0.9 * fade + ')';
+    ctx.shadowBlur = 14;
+    ctx.strokeStyle = 'rgba(255,90,120,' + 0.9 * fade + ')';
+    ctx.lineWidth = 2.6;
+    ctx.beginPath();
+    for (var s = 0; s < field.segments.length; s++) {
+      var seg = field.segments[s];
+      ctx.moveTo(seg.x1, seg.y1);
+      ctx.lineTo(seg.x2, seg.y2);
+    }
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = 'rgba(255,235,240,' + 0.85 * fade + ')';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    // 镜面
+    ctx.shadowColor = 'rgba(160,240,255,' + 0.85 * fade + ')';
+    ctx.shadowBlur = 10;
+    ctx.strokeStyle = 'rgba(210,250,255,' + 0.95 * fade + ')';
+    ctx.lineWidth = 5;
+    for (var m = 0; m < field.mirrors.length; m++) {
+      var mi = field.mirrors[m];
+      ctx.beginPath();
+      ctx.moveTo(mi.x1, mi.y1);
+      ctx.lineTo(mi.x2, mi.y2);
+      ctx.stroke();
+    }
+    ctx.shadowBlur = 0;
+    // 四角激光笔
+    ctx.fillStyle = 'rgba(255,90,120,' + 0.95 * fade + ')';
+    var corners = [
+      [ARENA.x, ARENA.y], [ARENA.x + ARENA.size, ARENA.y],
+      [ARENA.x + ARENA.size, ARENA.y + ARENA.size], [ARENA.x, ARENA.y + ARENA.size]
+    ];
+    for (var c = 0; c < corners.length; c++) {
+      ctx.beginPath();
+      ctx.arc(corners[c][0], corners[c][1], 7, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+}
+
+// 舰长船锚与钩索
+// 船锚锚体：主环+外发光+四根辐条+方向箭头
+// 可在舰长常驻轨道与钩中锚体两处共用，color 决定主环颜色
+function drawAnchor(color) {
+  var R = 13;
+  // 外发光
+  ctx.beginPath();
+  ctx.arc(0, 0, R + 6, 0, Math.PI * 2);
+  ctx.strokeStyle = 'rgba(31,158,168,.35)';
+  ctx.lineWidth = 4;
+  ctx.stroke();
+  // 锚体主环
+  ctx.beginPath();
+  ctx.arc(0, 0, R, 0, Math.PI * 2);
+  ctx.strokeStyle = color || '#1f9ea8';
+  ctx.lineWidth = 3.5;
+  ctx.stroke();
+  // 十字锚臂
+  ctx.beginPath();
+  ctx.moveTo(-R, 0); ctx.lineTo(R, 0);
+  ctx.moveTo(0, -R); ctx.lineTo(0, R);
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = 2.5;
+  ctx.stroke();
+  // 锚尖小三角（指向旋转方向）
+  ctx.beginPath();
+  ctx.moveTo(R + 2, -3);
+  ctx.lineTo(R + 9, 0);
+  ctx.lineTo(R + 2, 3);
+  ctx.closePath();
+  ctx.fillStyle = '#ffd54a';
+  ctx.fill();
+}
+
+function drawHooks() {
+  // 逐个 owner 处理，保证多锚（BOSS 舰长³）时每个锚都画出来
+  for (var hi = 0; hi < hook.length; hi++) {
+    var list = hooksOf(hi);
+    for (var li = 0; li < list.length; li++) {
+      var h = list[li];
+      var owner = balls[h.owner];
+      if (!owner || hp[h.owner] <= 0) continue;
+      if (h.released) {
+        // 多锚时冷却文字只由主锚显示，避免叠字
+        if (li === 0) {
+          ctx.fillStyle = 'rgba(255,255,255,.75)';
+          ctx.font = 'bold 11px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText('冷却 ' + h.cd.toFixed(1) + 's', owner.x, owner.y - BALL_R - 14);
+          ctx.textAlign = 'left';
+        }
+        continue;
+      }
+      var anchorX = h.ax != null ? h.ax : owner.x + Math.cos(h.ang) * h.r;
+      var anchorY = h.ay != null ? h.ay : owner.y + Math.sin(h.ang) * h.r;
+      if (h.hooked && h.target != null && hp[h.target] > 0) {
+        ctx.beginPath();
+        ctx.moveTo(owner.x, owner.y);
+        ctx.lineTo(anchorX, anchorY);
+        ctx.strokeStyle = 'rgba(255,255,255,.65)';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([6, 6]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        if (li === 0) {
+          ctx.font = 'bold 11px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillStyle = '#ff5b6e';
+          ctx.fillText('被钩住', balls[h.target].x, balls[h.target].y - BALL_R - 14);
+          ctx.textAlign = 'left';
+        }
+      }
+      ctx.save();
+      ctx.translate(anchorX, anchorY);
+      ctx.rotate(h.ang);
+      drawAnchor(owner.color);
+      ctx.restore();
+    }
+  }
+}
+
+/* ============ 主循环 ============ */
+function loop(ts) {
+  if (!running) return;
+  if (!lastTime) lastTime = ts;
+  var dt = Math.min(0.05, (ts - lastTime) / 1000);
+  lastTime = ts;
+  globalTime += dt;
+  update(dt);
+  updateHUD();
+  render();
+  rafId = requestAnimationFrame(loop);
+}
+
+/* ============ HUD ============ */
+function updateHUD() {
+  document.getElementById('topbar').classList.toggle('team-mode', teamMode || bossMode);
+  // BOSS 战里分裂体会不断增加，第 3 条血条（ballHpRow3）用来汇总所有分裂体
+  var splitterCount = 0, splitterHp = 0, splitterMax = 0;
+  if (bossMode) {
+    for (var s = 3; s < balls.length; s++) {
+      if (hp[s] <= 0) continue;
+      splitterCount++;
+      splitterHp += hp[s];
+      var sr = ROLES[selected[s]];
+      splitterMax += sr ? sr.maxHp : 0;
+    }
+  }
+  for (var i = 0; i < 4; i++) {
+    var row = document.getElementById('ballHpRow' + i);
+    var isActive = i < activeBallCount();
+    if (bossMode && i === 3) isActive = splitterCount > 0;   // 有分裂体时才占一行
+    row.style.display = isActive ? 'block' : 'none';
+    if (!isActive) continue;
+    if (bossMode && i === 3) {
+      var ratio3 = splitterMax > 0 ? splitterHp / splitterMax : 0;
+      document.getElementById('ballHpName3').textContent = '分裂体 ×' + splitterCount;
+      var number3 = document.getElementById('ballHpNum3');
+      number3.textContent = Math.ceil(splitterHp) + ' / ' + splitterMax;
+      number3.style.color = ratio3 <= 0.3 ? '#ff6b6b' : '#c7cee0';
+      var fill3 = document.getElementById('ballHp' + 3);
+      fill3.style.width = Math.max(0, ratio3 * 100) + '%';
+      fill3.style.background = '#7cf5c8';
+      continue;
+    }
+    var role = ROLES[selected[i]];
+    var maximum = role.maxHp;
+    var current = Math.max(0, hp[i] || 0);
+    var ratio = maximum > 0 ? current / maximum : 0;
+    document.getElementById('ballHpName' + i).textContent =
+      role.name + (teamMode ? ' · ' + (Math.floor(i / 2) + 1) + '号' : '');
+    var number = document.getElementById('ballHpNum' + i);
+    number.textContent = Math.ceil(current) + ' / ' + maximum;
+    number.style.color = ratio <= 0.3 ? '#ff6b6b' : '#c7cee0';
+    var fill = document.getElementById('ballHp' + i);
+    fill.style.width = Math.max(0, ratio * 100) + '%';
+    fill.style.background = role.color;
+  }
+  for (var team = 0; team < 2; team++) {
+    var health = teamHealth(team);
+    var ratio = health.maximum > 0 ? health.current / health.maximum : 0;
+    document.getElementById('hp' + team).style.width = Math.max(0, ratio * 100) + '%';
+    document.getElementById('hpNum' + team).textContent =
+      Math.ceil(health.current) + ' / ' + health.maximum;
+    document.getElementById('hpNum' + team).style.color =
+      ratio <= 0.3 ? '#ff6b6b' : '#c7cee0';
+    var skillTexts = [];
+    // BOSS 战且队伍里有分裂体时，只显示一条汇总，避免几十个球把文字撑爆
+    var isSplitterTeam = false;
+    for (var k = 0; k < balls.length; k++) {
+      if (teamOf(k) === team && ROLES[selected[k]] && ROLES[selected[k]].role === 'splitter') { isSplitterTeam = true; break; }
+    }
+    if (isSplitterTeam) {
+      var alive = 0, count = 0;
+      for (var q = 0; q < balls.length; q++) {
+        if (teamOf(q) !== team) continue;
+        count++;
+        if (hp[q] > 0) alive++;
+      }
+      skillTexts.push('分裂者 · 存活 ' + alive + ' 体 · 下次分裂 ' +
+        Math.max(0, bossSplitT).toFixed(1) + 's');
+      document.getElementById('skill' + team).textContent = skillTexts.join(' | ');
+      continue;
+    }
+    for (var i2 = 0; i2 < balls.length; i2++) {
+      if (teamOf(i2) !== team) continue;
+      var role2 = ROLES[selected[i2]];
+      var state = skillStateText(i2, role2);
+      skillTexts.push((teamMode ? (Math.floor(i2 / 2) + 1) + '号 ' : '') +
+        (hp[i2] <= 0 ? role2.name + ' 已淘汰' :
+          role2.skillName + (state ? ' · ' + state : '')));
+    }
+    document.getElementById('skill' + team).textContent = skillTexts.join(' | ');
+  }
+}
+
+// HP 进度条下方：各角色技能剩余时间文字
+function skillStateText(p, r) {
+  var role = r.role;
+  if (role === 'hook') {
+    if (hook[p] && hook[p].released && hook[p].cd > 0) return '船锚冷却 ' + hook[p].cd.toFixed(1) + 's';
+    if (hook[p] && hook[p].hooked) return '钩中 ' + Math.max(0, ROLE_HOOK_SPIN - hook[p].t).toFixed(1) + 's';
+    if (hook[p]) return '旋转中';
+  } else if (role === 'gun') {
+    if (cd[p] > 0) return '冷却 ' + cd[p].toFixed(1) + 's';
+  } else if (role === 'gunner') {
+    if (cd[p] > 0) return '冷却 ' + cd[p].toFixed(1) + 's';
+  } else if (role === 'dispatcher') {
+    if (cd[p] > 0) return '列车冷却 ' + cd[p].toFixed(1) + 's';
+  } else if (role === 'dynamite') {
+    if (cd[p] > 0) return '炸药冷却 ' + cd[p].toFixed(1) + 's';
+  } else if (role === 'cowboy') {
+    if (balls[p] && balls[p].cowboyIdx != null && balls[p].cowboyIdx < ROLE_COWBOY_SHOTS)
+      return '齐射 ' + (balls[p].cowboyIdx + 1) + '/' + ROLE_COWBOY_SHOTS;
+    if (cd[p] > 0) return '齐射冷却 ' + cd[p].toFixed(1) + 's';
+  } else if (role === 'cannon') {
+    if (cd[p] > 0) return '蓄力冷却 ' + cd[p].toFixed(1) + 's';
+  } else if (role === 'vampire') {
+    return 'HP ' + Math.ceil(hp[p]) + '/' + r.maxHp + ' · 吸血中';
+  } else if (role === 'ghost') {
+    var gp = balls[p] && balls[p].ghostPhase, gt = balls[p] ? balls[p].ghostT || 0 : 0;
+    if (gp === 'warp') return '减伤反击 ' + gt.toFixed(1) + 's';
+    if (gp === 'ready') return '受击触发技能';
+    if (gp === 'cooldown') return '技能冷却 ' + gt.toFixed(1) + 's';
+  } else if (role === 'medic') {
+    var medic = balls[p];
+    // 复活相关状态优先显示
+    if (medic.medicRevivePhase === 'charging') {
+      return '复活蓄力 ' + Math.max(0, medic.medicReviveT).toFixed(1) + 's（禁治疗弹）';
+    }
+    var reviveTag = medic.medicRevivePhase === 'used' ? ' · 复活已用' : ' · 复活就绪';
+    if (medic.medicPhase === 'cooldown') return '援护冷却 ' + medic.medicT.toFixed(1) + 's' + reviveTag;
+    if (medic.medicPhase === 'ready') return '等待队友造成伤害' + reviveTag;
+    if (medic.medicPhase === 'charge')
+      return '治疗蓄力 ' + medic.medicT.toFixed(1) + 's · ' +
+        formatMathNumber(medic.medicDamage * ROLE_MEDIC_HEAL) + reviveTag;
+  } else if (role === 'mathematician') {
+    var mathBall = balls[p];
+    if (mathBall.mathPhase === 'cooldown') return '算式冷却 ' + mathBall.mathT.toFixed(1) + 's';
+    if (mathBall.mathPhase === 'charge')
+      return mathExpressionText(mathBall.mathExpression) + ' · ' +
+        mathBall.mathT.toFixed(1) + 's';
+  } else if (role === 'dynmath') {
+    var dynMathState = balls[p];
+    if (dynMathState.dynmathPhase === 'cooldown') return '算式炸弹冷却 ' + dynMathState.dynmathT.toFixed(1) + 's';
+    if (dynMathState.dynmathPhase === 'charge') {
+      var dynMathInfo = mathExpressionText(dynMathState.dynmathExpression) + ' · 蓄力 ' +
+        dynMathState.dynmathT.toFixed(1) + 's';
+      // V2：伤害固定，算式只决定爆炸半径，蓄力期间就把半径预告出来
+      if (r.dynMathRadiusBase != null && dynMathState.dynmathExpression) {
+        dynMathInfo += ' · ' + Math.round(dynMathDamageOf(r, 0)) + ' 伤 / 半径 ' +
+          Math.round(dynMathRadiusOf(r, dynMathState.dynmathExpression.result)) + 'px';
+      }
+      return dynMathInfo;
+    }
+  } else if (role === 'physicist') {
+    var physState = balls[p];
+    if (physState.physPhase === 'active') {
+      return physKindName(physState.physKind) + ' 剩余 ' + physState.physT.toFixed(1) + 's';
+    }
+    return '场域冷却 ' + Math.max(0, physState.physT).toFixed(1) + 's';
+  } else if (role === 'virus') {
+    var virusBall = balls[p];
+    if (cd[p] > 0) return '放罐冷却 ' + cd[p].toFixed(1) + 's · 场上 ' + virusJars.length + ' 罐';
+    return '病毒罐就绪 · 已触 ' + (virusBall.virusHits || 0) + ' 次';
+  } else if (role === 'splitter') {
+    var spBall = balls[p];
+    var regenState = (spBall.splitNoRegenT > 0)
+      ? '禁疗 ' + spBall.splitNoRegenT.toFixed(1) + 's'
+      : '回血 ' + Math.max(0, spBall.splitRegenT).toFixed(1) + 's';
+    var full = hp[p] >= r.maxHp;
+    return regenState + ' · 分裂 ' + Math.max(0, bossSplitT).toFixed(1) + 's' + (full ? '(满)' : '');
+  } else if (role === 'guard') {
+    var guardBall = balls[p];
+    var myLines = 0;
+    for (var gl = 0; gl < guardLines.length; gl++) {
+      if (guardLines[gl].team === teamOf(p)) myLines++;
+    }
+    return (guardBall.guardStage === 'first' ? '拉线中·待第二端' : '待碰墙拉线') +
+      ' · 警戒线 ' + myLines + ' 条';
+  }
+  return '';
+}
+
+function flashHUD(side) {
+  var el = document.querySelectorAll('.player')[teamOf(side)];
+  el.classList.remove('flash');
+  void el.offsetWidth;
+  el.classList.add('flash');
+}
+
+/* ============ 联机（WebRTC，仅 1v1） ============
+ * 房主权威模拟：房主跑真实物理，以约 30Hz 把状态推给房客；房客只负责渲染。
+ * 两种握手方式：① 房间列表（需要一个公网信令服务）；② 复制粘贴 offer/answer（无需服务器）。
+ * 已配置 STUN：同一局域网会优先走内网直连，不同网络时尝试公网直连（对称 NAT 可能需要 TURN）。
+ */
+var NET = {
+  mode: null,        // null | 'host' | 'guest'
+  pc: null,
+  dc: null,
+  connected: false,
+  guestRole: 1,      // 房客（粉方）选的角色下标
+  acc: 0,
+  lastMeta: ''
+};
+var netGuestRunning = false;    // 房客端：房主那边是否在跑
+var netGuestFinished = false;
+
+function netStatus(msg) {
+  var el = document.getElementById('netStatus');
+  if (el) el.textContent = msg;
+}
+
+function netPanel(open) {
+  var p = document.getElementById('netPanel');
+  if (!p) return;
+  p.classList.toggle('hidden', !open);
+}
+
+function netIsGuest() { return NET.mode === 'guest'; }
+
+// ---- base64 / gzip 编解码（用于把 SDP 压成一段可复制文本）----
+function netBytesToB64(bytes) {
+  var bin = '';
+  for (var i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  return btoa(bin);
+}
+function netB64ToBytes(b64) {
+  var bin = atob(b64);
+  var out = new Uint8Array(bin.length);
+  for (var i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+async function netPack(obj) {
+  var json = JSON.stringify(obj);
+  try {
+    if (typeof CompressionStream === 'function') {
+      var cs = new CompressionStream('gzip');
+      var stream = new Blob([json]).stream().pipeThrough(cs);
+      var buf = await new Response(stream).arrayBuffer();
+      return 'M1G|' + netBytesToB64(new Uint8Array(buf));
+    }
+  } catch (e) { /* 回落到未压缩 */ }
+  return 'M1J|' + netBytesToB64(new TextEncoder().encode(json));
+}
+
+async function netUnpack(code) {
+  code = (code || '').trim().replace(/\s+/g, '');
+  if (!code) throw new Error('空的连接码');
+  if (code.indexOf('M1G|') === 0) {
+    var bytes = netB64ToBytes(code.slice(4));
+    var ds = new DecompressionStream('gzip');
+    var stream = new Blob([bytes]).stream().pipeThrough(ds);
+    var text = await new Response(stream).text();
+    return JSON.parse(text);
+  }
+  if (code.indexOf('M1J|') === 0) {
+    return JSON.parse(new TextDecoder().decode(netB64ToBytes(code.slice(4))));
+  }
+  return JSON.parse(new TextDecoder().decode(netB64ToBytes(code)));
+}
+
+// ---- PeerConnection ----
+// STUN：让两端拿到自己的公网地址，这样不在同一 Wi-Fi 也能尝试直连。
+// 默认用国内可访问的公共 STUN；同一局域网时浏览器仍优先用内网候选，速度不变。
+var NET_ICE_SERVERS = [
+  { urls: ['stun:stun.miwifi.com:3478'] }
+];
+
+function netNewPC() {
+  var pc;
+  try {
+    pc = new RTCPeerConnection({ iceServers: NET_ICE_SERVERS, iceCandidatePoolSize: 0 });
+  } catch (e) {
+    pc = new RTCPeerConnection({ iceServers: [], iceCandidatePoolSize: 0 });
+  }
+  pc.onconnectionstatechange = function () {
+    var st = pc.connectionState;
+    if (st === 'connected') {
+      NET.connected = true;
+      netStatus('已连接 ✅ 可以开始对局了');
+      onNetConnected();
+    } else if (st === 'failed' || st === 'closed') {
+      netTeardown('连接已断开（' + st + '），已切回单机模式');
+    } else if (st === 'disconnected') {
+      // 可能自动恢复，先只提示；DC 真断了会走 dc.onclose 触发复位
+      netStatus('连接暂时中断，正在尝试恢复…');
+    } else {
+      netStatus('连接状态：' + st);
+    }
+  };
+  return pc;
+}
+
+// 等 ICE 收集完成（最多 4 秒），保证 SDP 里带齐内网地址
+function netWaitIce(pc) {
+  return new Promise(function (resolve) {
+    if (pc.iceGatheringState === 'complete') return resolve();
+    var done = false;
+    function finish() { if (!done) { done = true; resolve(); } }
+    pc.addEventListener('icegatheringstatechange', function () {
+      if (pc.iceGatheringState === 'complete') finish();
+    });
+    setTimeout(finish, 4000);
+  });
+}
+
+async function netHostMakeOffer() {
+  try {
+    netStatus('正在生成邀请码…');
+    NET.mode = 'host';
+    NET.pc = netNewPC();
+    NET.dc = NET.pc.createDataChannel('game', { ordered: true });
+    netBindChannel(NET.dc);
+    var offer = await NET.pc.createOffer();
+    await NET.pc.setLocalDescription(offer);
+    await netWaitIce(NET.pc);
+    var code = await netPack({ t: 'offer', sdp: NET.pc.localDescription });
+    var out = document.getElementById('netOfferOut');
+    if (out) out.value = code;
+    netStatus('邀请码已生成（' + code.length + ' 字符），发给房客');
+  } catch (e) {
+    netStatus('生成失败：' + e.message);
+  }
+}
+
+async function netHostApplyAnswer() {
+  try {
+    var code = document.getElementById('netAnswerIn').value;
+    netStatus('正在应用应答码…');
+    var obj = await netUnpack(code);
+    await NET.pc.setRemoteDescription(obj.sdp);
+    netStatus('应答码已应用，等待连接建立…');
+  } catch (e) {
+    netStatus('应用失败：' + e.message);
+  }
+}
+
+async function netGuestMakeAnswer() {
+  try {
+    netStatus('正在读取邀请码…');
+    var code = document.getElementById('netOfferIn').value;
+    var obj = await netUnpack(code);
+    NET.mode = 'guest';
+    NET.pc = netNewPC();
+    NET.pc.ondatachannel = function (ev) {
+      netBindChannel(ev.channel);
+    };
+    await NET.pc.setRemoteDescription(obj.sdp);
+    var answer = await NET.pc.createAnswer();
+    await NET.pc.setLocalDescription(answer);
+    await netWaitIce(NET.pc);
+    var outCode = await netPack({ t: 'answer', sdp: NET.pc.localDescription });
+    var out = document.getElementById('netAnswerOut');
+    if (out) out.value = outCode;
+    netStatus('应答码已生成（' + outCode.length + ' 字符），发回给房主');
+  } catch (e) {
+    netStatus('生成失败：' + e.message);
+  }
+}
+
+// ---- 数据通道 ----
+function netBindChannel(dc) {
+  NET.dc = dc;
+  dc.onopen = function () {
+    NET.connected = true;
+    netStatus('已连接 ✅ 可以开始对局了');
+    onNetConnected();
+  };
+  dc.onmessage = function (ev) {
+    var msg;
+    try { msg = JSON.parse(ev.data); } catch (e) { return; }
+    netOnMessage(msg);
+  };
+  dc.onclose = function () { netTeardown('连接已关闭，已切回单机模式'); };
+}
+
+function netSend(obj) {
+  if (!NET.dc || NET.dc.readyState !== 'open') return;
+  try { NET.dc.send(JSON.stringify(obj)); } catch (e) { /* 忽略 */ }
+}
+
+function netOnConnected() {
+  if (NET.mode === 'host') {
+    // 房主连上后把当前设置同步给房客
+    netSendMeta();
+  } else {
+    // 房客：请求一次完整状态
+    netSend({ t: 'hello', role: NET.guestRole });
+    document.getElementById('netBtn').classList.add('active');
+    netStatus('已连接 ✅ 等待房主开始');
+  }
+}
+
+function netSendMeta() {
+  if (NET.mode !== 'host') return;
+  netSend({
+    t: 'meta',
+    sel: [selected[0], selected[1]],
+    running: running,
+    finished: finished,
+    teamMode: false, bossMode: false
+  });
+}
+
+// 断开/连接失败时的统一复位：回到单机模式，并把按钮与对局状态全部恢复
+function netTeardown(reason) {
+  if (NET.tearingDown) return;      // 防止 close() 触发 onclose 再进来
+  NET.tearingDown = true;
+  var wasLinked = (NET.mode !== null) || NET.connected;
+  // 房主断开时把房间从信令服务上撤掉
+  try { if (typeof netSigCloseRoom === 'function') netSigCloseRoom(); } catch (e) { /* 忽略 */ }
+  NET.connected = false;
+  NET.mode = null;
+  netGuestRunning = false;
+  netGuestFinished = false;
+  setPageLock(false);
+  try { if (NET.dc) NET.dc.close(); } catch (e) { /* 忽略 */ }
+  try { if (NET.pc) NET.pc.close(); } catch (e) { /* 忽略 */ }
+  NET.dc = null;
+  NET.pc = null;
+  NET.acc = 0;
+
+  var nb = document.getElementById('netBtn');
+  if (nb) nb.classList.remove('active');
+
+  // 对局中掉线：直接结束对局回到待机，避免卡在"半局"状态
+  if (running || finished) {
+    running = false;
+    finished = false;
+    if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
+    overlay.classList.add('hidden');
+    resetMatch();
+    hideRolePanels(false);
+  }
+
+  // 恢复控制栏 4 个按钮
+  if (ctrlBtn) ctrlBtn.disabled = false;
+  if (delayBtn) delayBtn.disabled = false;
+  if (modeBtn) modeBtn.disabled = false;
+  if (bossBtn) bossBtn.disabled = false;
+
+  syncTopNames();
+  syncRolePickButtons();
+  syncModeButton();     // 医者等限制由它重新决定
+  syncCtrlBtn();
+  updateHUD();
+  if (!netIsGuest()) render();
+  netStatus(reason || (wasLinked ? '连接已断开，已切回单机模式' : '未连接'));
+  NET.tearingDown = false;
+}
+
+function netOnMessage(msg) {
+  if (NET.mode === 'host') {
+    // ---- 房主收到房客消息 ----
+    if (msg.t === 'hello') {
+      if (typeof msg.role === 'number') {
+        NET.guestRole = msg.role;
+        selected[1] = msg.role;
+        if (!running) { resetMatch(); syncTopNames(); updateHUD(); render(); }
+      }
+      netSendMeta();
+    } else if (msg.t === 'pick') {
+      if (running || finished) return;
+      if (typeof msg.role === 'number' && ROLES[msg.role] && !ROLES[msg.role].bossOnly) {
+        NET.guestRole = msg.role;
+        selected[1] = msg.role;
+        resetMatch(); syncTopNames(); syncRolePickButtons(); updateHUD(); render();
+        netSendMeta();
+      }
+    } else if (msg.t === 'cast') {
+      // 房客点了屏幕：按房客那侧球的实际位置换算角度并释放
+      if (!running) return;
+      var ang = angleToPoint(1, msg.x, msg.y);
+      castSkill(1, ang);
+    } else if (msg.t === 'aim') {
+      // 房客指针移动：让房客那侧的船锚实时跟随
+      if (!running) return;
+      aimHook(1, angleToPoint(1, msg.x, msg.y));
+    }
+  } else if (NET.mode === 'guest') {
+    // ---- 房客收到房主消息 ----
+    if (msg.t === 'meta') {
+      selected[0] = msg.sel[0];
+      selected[1] = msg.sel[1];
+      netGuestRunning = !!msg.running;
+      netGuestFinished = !!msg.finished;
+      setPageLock(netGuestRunning);
+      syncTopNames();
+      syncRolePickButtons();
+      updateHUD();
+      syncCtrlBtn();
+      if (!netGuestRunning) {
+        // 回到待机：清掉上一局残留
+        balls = [mkBall(0), mkBall(1)];
+        hp = [ROLES[selected[0]].maxHp, ROLES[selected[1]].maxHp];
+        bullets = []; dynamites = []; trains = []; physFields = [];
+        virusJars = []; virusDots = []; guardLines = []; hook = [null, null];
+        render();
+      }
+    } else if (msg.t === 'state') {
+      netApplyState(msg);
+    }
+  }
+}
+
+// 房主每帧把状态推给房客（约 30Hz）
+function netHostTick(dt) {
+  if (NET.mode !== 'host' || !NET.connected) return;
+  NET.acc += dt;
+  if (NET.acc < 1 / 30) return;
+  NET.acc = 0;
+  netSend(netSnapshot());
+}
+
+function r1(v) { return Math.round(v); }
+function r2(v) { return Math.round(v * 100) / 100; }
+
+// 房主侧判断「这颗球现在点一下能不能放技能」，用于房客端显示就绪状态
+function canCastNow(owner) {
+  if (owner < 0 || owner >= balls.length) return false;
+  if (hp[owner] <= 0) return false;
+  var role = ROLES[selected[owner]];
+  if (!role) return false;
+  var b = balls[owner];
+  var r = role.role;
+  if (r === 'hook') return true;
+  if (r === 'shield' || r === 'vampire' || r === 'guard' || r === 'splitter') return false;
+  if (r === 'gun' || r === 'gunner' || r === 'dynamite' || r === 'virus' || r === 'dispatcher') {
+    return cd[owner] <= 0;
+  }
+  if (r === 'cowboy') return cd[owner] <= 0 && b.cowboyIdx == null;
+  if (r === 'mathematician') return b.mathPhase === 'cooldown' && b.mathT <= 0;
+  if (r === 'dynmath') return b.dynmathPhase === 'cooldown' && b.dynmathT <= 0;
+  if (r === 'ghost') return (b.ghostPhase || 'cooldown') === 'ready';
+  if (r === 'medic') return b.medicPhase === 'ready';
+  if (r === 'physicist') return b.physPhase === 'cooldown' && b.physT <= 0;
+  return false;
+}
+
+function netSnapshot() {
+  var hooks = [];
+  eachHook(function (h) {
+    hooks.push([h.owner, r1(h.ax || 0), r1(h.ay || 0), r2(h.ang), h.r,
+      h.released ? 1 : 0, h.hooked ? 1 : 0, r2(h.cd)]);
+  });
+  return {
+    t: 'state',
+    time: r2(globalTime),
+    ro: [selected[0], selected[1]],
+    hp: [r1(hp[0]), r1(hp[1])],
+    cd: [r2(cd[0]), r2(cd[1])],
+    rdy: [canCastNow(0) ? 1 : 0, canCastNow(1) ? 1 : 0],
+    stx: [
+      skillStateText(0, ROLES[selected[0]]) || '',
+      skillStateText(1, ROLES[selected[1]]) || ''
+    ],
+    b: balls.map(function (b) {
+      return [r1(b.x), r1(b.y), b.gradient ? 1 : 0, b.guardStage === 'first' ? 1 : 0,
+        r1(b.guardPoint ? b.guardPoint.x : 0), r1(b.guardPoint ? b.guardPoint.y : 0),
+        r2(b.splitNoRegenT || 0)];
+    }),
+    u: bullets.map(function (bl) { return [r1(bl.x), r1(bl.y), bl.kind === 'heal' ? 1 : 0]; }),
+    d: dynamites.map(function (d) {
+      return [r1(d.x), r1(d.y), d.r, r2(d.fuse), r2(d.fuseMax), d.math ? 1 : 0,
+        d.dmg == null ? -1 : d.dmg];
+    }),
+    tr: trains.map(function (t) { return [r1(t.x), r1(t.y), t.axis === 'vertical' ? 1 : 0, t.length, t.width, t.owner]; }),
+    j: virusJars.map(function (j) { return [r1(j.x), r1(j.y), j.r, j.hits]; }),
+    g: guardLines.map(function (l) { return [r1(l.x1), r1(l.y1), r1(l.x2), r1(l.y2)]; }),
+    hk: hooks,
+    pf: physFields.map(function (f) {
+      return [f.kind, r2(f.t), r1(f.x || 0), r1(f.y || 0), f.side || 0,
+        r1(f.cx || 0), r1(f.cy || 0), f.dx || 0, f.dy || 0,
+        f.segments ? f.segments.map(function (s) { return [r1(s.x1), r1(s.y1), r1(s.x2), r1(s.y2)]; }) : [],
+        f.mirrors ? f.mirrors.map(function (m) { return [r1(m.x1), r1(m.y1), r1(m.x2), r1(m.y2)]; }) : []];
+    })
+  };
+}
+
+// 房客：把房主的状态还原成绘制用的数据
+var netSkillTexts = ['', ''];
+var netReady = [0, 0];
+var netLastStateTime = 0;
+
+function netApplyState(s) {
+  if (s.ro) { selected[0] = s.ro[0]; selected[1] = s.ro[1]; }
+  if (s.hp) { hp[0] = s.hp[0]; hp[1] = s.hp[1]; }
+  if (s.cd) { cd[0] = s.cd[0]; cd[1] = s.cd[1]; }          // 冷却同步给房客，技能环才能画
+  if (s.rdy) { netReady[0] = s.rdy[0]; netReady[1] = s.rdy[1]; }
+  if (s.stx) { netSkillTexts[0] = s.stx[0]; netSkillTexts[1] = s.stx[1]; }
+  netLastStateTime = s.time || 0;
+  if (s.b) {
+    balls = s.b.map(function (arr, i) {
+      var role = ROLES[selected[i]] || ROLES[0];
+      return {
+        x: arr[0], y: arr[1], vx: 0, vy: 0,
+        color: role.color, glow: glowOf(role.color),
+        gradient: arr[2] ? (role.gradient || null) : null,
+        hookAngle: 0,
+        guardStage: arr[3] ? 'first' : 'idle',
+        guardPoint: arr[3] ? { x: arr[4], y: arr[5] } : null
+      };
+    });
+  }
+  if (s.u) {
+    bullets = s.u.map(function (arr) {
+      return { x: arr[0], y: arr[1], kind: arr[2] ? 'heal' : null, color: '#ffffff' };
+    });
+  }
+  if (s.d) {
+    dynamites = s.d.map(function (arr) {
+      return { x: arr[0], y: arr[1], r: arr[2], fuse: arr[3], fuseMax: arr[4],
+        math: !!arr[5], dmg: arr[6] < 0 ? null : arr[6],
+        color: selected[1] != null ? ROLES[selected[1]].color : '#ff8a3d' };
+    });
+  }
+  if (s.tr) {
+    trains = s.tr.map(function (arr) {
+      return { x: arr[0], y: arr[1], axis: arr[2] ? 'vertical' : 'horizontal',
+        length: arr[3], width: arr[4], owner: arr[5] };
+    });
+  }
+  if (s.j) {
+    virusJars = s.j.map(function (arr) {
+      return { x: arr[0], y: arr[1], r: arr[2], hits: arr[3], color: '#a6e22e', cool: {} };
+    });
+  }
+  if (s.g) {
+    guardLines = s.g.map(function (arr) {
+      return { x1: arr[0], y1: arr[1], x2: arr[2], y2: arr[3], color: '#7c8cff' };
+    });
+  }
+  if (s.pf) {
+    physFields = s.pf.map(function (arr) {
+      var f = { kind: arr[0], t: arr[1], color: '#22d3ee' };
+      if (arr[0] === 1) { f.x = arr[2]; f.y = arr[3]; f.side = arr[4]; f.cx = arr[5]; f.cy = arr[6]; }
+      if (arr[0] === 2) { f.dx = arr[7]; f.dy = arr[8]; }
+      if (arr[0] === 3) {
+        f.segments = arr[9].map(function (a) { return { x1: a[0], y1: a[1], x2: a[2], y2: a[3] }; });
+        f.mirrors = arr[10].map(function (a) { return { x1: a[0], y1: a[1], x2: a[2], y2: a[3] }; });
+      }
+      return f;
+    });
+  }
+  // 钩子：还原成 hook[] 结构供 drawHooks 使用
+  hook = [null, null];
+  if (s.hk) {
+    for (var i = 0; i < s.hk.length; i++) {
+      var a = s.hk[i];
+      var h = {
+        owner: a[0], ax: a[1], ay: a[2], ang: a[3], r: a[4],
+        released: !!a[5], hooked: !!a[6], cd: a[7], extras: [],
+        target: null, hits: 0, t: 0
+      };
+      if (!hook[a[0]]) hook[a[0]] = h;
+      else hook[a[0]].extras.push(h);
+    }
+  }
+  netGuestApplyHUD();
+  netRender();
+}
+
+function netGuestApplyHUD() {
+  var topbar = document.getElementById('topbar');
+  if (topbar) topbar.classList.toggle('team-mode', false);
+  for (var i = 0; i < 2; i++) {
+    var role = ROLES[selected[i]];
+    if (!role) continue;
+    var max = role.maxHp;
+    var cur = Math.max(0, hp[i] || 0);
+    var ratio = max > 0 ? cur / max : 0;
+    var fill = document.getElementById('ballHp' + i);
+    if (fill) { fill.style.width = Math.max(0, ratio * 100) + '%'; fill.style.background = role.color; }
+    var num = document.getElementById('ballHpNum' + i);
+    if (num) { num.textContent = Math.ceil(cur) + ' / ' + max; num.style.color = ratio <= 0.3 ? '#ff6b6b' : '#c7cee0'; }
+    var nameEl = document.getElementById('ballHpName' + i);
+    if (nameEl) {
+      nameEl.textContent = role.name + (hp[i] <= 0 ? '（已淘汰）' : '');
+      nameEl.style.color = role.color;
+    }
+    var hpFill = document.getElementById('hp' + i);
+    if (hpFill) { hpFill.style.width = Math.max(0, ratio * 100) + '%'; hpFill.style.background = role.color; }
+    var hpNum = document.getElementById('hpNum' + i);
+    if (hpNum) hpNum.textContent = Math.ceil(cur) + ' / ' + max;
+    // 技能状态 + 冷却同步显示（否则房客看不到冷却）
+    var skillEl = document.getElementById('skill' + i);
+    if (skillEl) {
+      var txt = role.skillName + (netSkillTexts[i] ? ' · ' + netSkillTexts[i] : '');
+      if (hp[i] <= 0) txt = role.name + ' 已淘汰';
+      else if (netReady[i]) txt += ' · 可点击释放';
+      skillEl.textContent = txt;
+    }
+  }
+}
+
+// 房客端的绘制：与房主同样的可见元素 + 冷却/就绪提示
+function netRender() {
+  drawBackground();
+  drawArena();
+  drawTrains();
+  drawPhysFields();
+  drawVirusJars();
+  for (var i = 0; i < balls.length; i++) {
+    if (hp[i] > 0) drawBall(balls[i], i);
+  }
+  drawHooks();
+  drawDynamites();
+  drawBullets();
+  drawPhysLasers();
+  drawGuardLines();
+  // 技能环（依赖同步过来的 cd）与「就绪」提示
+  for (var i2 = 0; i2 < balls.length; i2++) {
+    if (hp[i2] <= 0) continue;
+    drawSkillRing(balls[i2]);
+    if (netReady[i2]) {
+      var b = balls[i2];
+      ctx.beginPath();
+      ctx.arc(b.x, b.y, BALL_R + 6, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(255,255,255,' + (0.35 + 0.35 * Math.sin(globalTime * 8)) + ')';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+  }
+}
+
+/* ============ 手动操作：联机时由玩家点击释放技能 ============ */
+function isManualPlay() { return !!(NET && NET.connected); }
+
+// 对局中锁定页面：禁止滚动 / 下拉刷新 / 双指缩放，让长按拖动专门当鼠标用
+function setPageLock(on) {
+  if (!document.body || !document.body.classList) return;
+  document.body.classList.toggle('net-lock', !!on);
+}
+
+// 把「点击位置」换算成从某颗球出发的角度
+function angleToPoint(owner, px, py) {
+  var b = balls[owner];
+  if (!b) return 0;
+  return Math.atan2(py - b.y, px - b.x);
+}
+
+// 统一的手动释放入口：owner 释放技能，ang 为点击方向（部分技能不需要方向）
+function castSkill(owner, ang) {
+  if (!isManualPlay()) return false;
+  if (owner < 0 || owner >= balls.length || hp[owner] <= 0) return false;
+  var role = ROLES[selected[owner]];
+  if (!role) return false;
+  var r = role.role;
+  var b = balls[owner];
+
+  // 船锚类：只改变朝向，距离固定
+  if (r === 'hook') { aimHook(owner, ang); return true; }
+  // 这三个是「接触/撞墙才生效」，保持自动
+  if (r === 'shield' || r === 'vampire' || r === 'guard' || r === 'splitter') return false;
+
+  if (r === 'gun') {
+    if (cd[owner] > 0) return false;
+    fireGun(owner, ang);
+    return true;
+  }
+  if (r === 'gunner') {
+    if (cd[owner] > 0) return false;
+    var me = balls[owner];
+    var gdmg = ROLE_GUNNER_DMG_MIN + Math.floor(Math.random() * (ROLE_GUNNER_DMG_MAX - ROLE_GUNNER_DMG_MIN + 1));
+    bullets.push({
+      x: me.x + Math.cos(ang) * (BALL_R + 4),
+      y: me.y + Math.sin(ang) * (BALL_R + 4),
+      vx: Math.cos(ang) * BULLET_SPEED,
+      vy: Math.sin(ang) * BULLET_SPEED,
+      owner: owner, color: me.color, dmg: gdmg,
+      rico: 0, ricoMax: ROLE_GUNNER_RICO
+    });
+    cd[owner] = ROLE_GUNNER_CD;
+    return true;
+  }
+  if (r === 'cowboy') {
+    if (cd[owner] > 0 || b.cowboyIdx != null) return false;
+    cd[owner] = ROLE_COWBOY_CD;
+    b.cowboyIdx = 0;
+    b.cowboyNext = 0;                 // 手动时立刻出第一发
+    b.cowboyPause = ROLE_COWBOY_PAUSE;
+    b.cowboyAng = ang;                // 6 发都朝这个方向（不再追踪）
+    b.vx = 0; b.vy = 0;
+    return true;
+  }
+  if (r === 'dynamite') {
+    if (cd[owner] > 0) return false;
+    fireDynamite(owner, ang);
+    return true;
+  }
+  if (r === 'mathematician') {
+    if (b.mathPhase !== 'cooldown' || b.mathT > 0) return false;
+    b.castAng = ang;
+    b.mathPhase = 'charge';
+    b.mathT = ROLE_MATH_CHARGE;
+    b.mathExpression = createMathExpression();
+    return true;
+  }
+  if (r === 'dynmath') {
+    if (b.dynmathPhase !== 'cooldown' || b.dynmathT > 0) return false;
+    b.castAng = ang;
+    b.dynmathPhase = 'charge';
+    b.dynmathT = ROLE_DYNMATH_CHARGE;
+    b.dynmathExpression = createMathExpression();
+    return true;
+  }
+  if (r === 'ghost') {
+    // 点击 → 进入 5 秒减伤/累计阶段，结束时朝点击方向发返还弹
+    if ((b.ghostPhase || 'cooldown') !== 'ready') return false;
+    b.castAng = ang;
+    b.ghostPhase = 'warp';
+    b.ghostT = ROLE_GHOST_WARP;
+    b.ghostDmg = 0;
+    return true;
+  }
+  if (r === 'medic') {
+    // 点击 → 进入 5 秒治疗蓄力（累计队友伤害），结束时治疗弹飞向队友
+    if (b.medicPhase !== 'ready') return false;
+    b.medicPhase = 'charge';
+    b.medicT = ROLE_MEDIC_CHARGE;
+    b.medicDamage = 0;
+    return true;
+  }
+  if (r === 'physicist') {
+    if (b.physPhase !== 'cooldown' || b.physT > 0) return false;
+    b.physKind = activatePhysField(owner);
+    b.physPhase = 'active';
+    b.physT = ROLE_PHYS_DURATION;
+    return true;
+  }
+  if (r === 'virus') {
+    if (cd[owner] > 0) return false;
+    spawnVirusJars(owner);
+    cd[owner] = ROLE_VIRUS_CD;
+    return true;
+  }
+  if (r === 'dispatcher') {
+    if (cd[owner] > 0) return false;
+    summonTrains(owner);
+    cd[owner] = ROLE_DISPATCHER_CD;
+    return true;
+  }
+  return false;
+}
+
+// 船锚：距离固定，只把朝向改到点击方向
+function aimHook(owner, ang) {
+  var list = hooksOf(owner);
+  for (var i = 0; i < list.length; i++) {
+    if (list[i].released) continue;
+    list[i].ang = ang;
+  }
+  var b = balls[owner];
+  if (b) b.hookAngle = ang;
+  // 指针会持续移动，这里不能刷飘字，只记录最后一次瞄准方向供本地绘制使用
+  if (b) b.lastAimAng = ang;
+}
+
+/* ============ 房间列表：走公共 MQTT（retained 消息当列表） ============ */
+/**
+ * 为什么用 MQTT：不需要注册、不需要部署服务器，国内一般可访问。
+ *   - 房主开房 → 往 arena/rooms/<id> 发一条 retained 消息 {n:房间名, o:offer, t:时间}
+ *   - 房客订阅 arena/rooms/+ → broker 会立刻把所有 retained 房间推过来 = 房间列表
+ *   - 房客把 answer 发到 arena/ans/<id>，房主订阅它即可收到
+ * 下面是内嵌的精简 MQTT 3.1.1 客户端（只做 CONNECT/SUBSCRIBE/PUBLISH QoS0/PING）。
+ */
+var MQ = {
+  ws: null, url: '', ready: false, clientId: '',
+  keepTimer: null, buf: new Uint8Array(0), packetId: 1,
+  onMessage: null, onReady: null, onClose: null
+};
+
+var MQ_TOPIC_ROOMS = 'arena/rooms/';
+var MQ_TOPIC_ANS = 'arena/ans/';
+var MQ_DEFAULT_URL = 'wss://broker.emqx.io:8084/mqtt';
+var SIG = { base: '', roomId: null, roomName: '', rooms: {}, listTimer: null, ansHandler: null };
+
+/* ---------- MQTT 编解码 ---------- */
+function mqEnc(s) { return new TextEncoder().encode(s); }
+function mqDec(b) { return new TextDecoder().decode(b); }
+
+function mqJoin(parts) {
+  var len = 0, i;
+  for (i = 0; i < parts.length; i++) len += parts[i].length;
+  var out = new Uint8Array(len), off = 0;
+  for (i = 0; i < parts.length; i++) { out.set(parts[i], off); off += parts[i].length; }
+  return out;
+}
+
+function mqVarLen(n) {
+  var out = [];
+  do {
+    var b = n % 128;
+    n = Math.floor(n / 128);
+    if (n > 0) b |= 0x80;
+    out.push(b);
+  } while (n > 0);
+  return out;
+}
+
+function mqU16(n) { return new Uint8Array([(n >> 8) & 0xff, n & 0xff]); }
+
+function mqPacket(type, flags, body) {
+  var head = [(type << 4) | flags].concat(mqVarLen(body.length));
+  var out = new Uint8Array(head.length + body.length);
+  out.set(head, 0);
+  out.set(body, head.length);
+  return out;
+}
+
+function mqPublish(topic, payloadStr, retain) {
+  if (!MQ.ws || MQ.ws.readyState !== 1) return false;
+  var body = mqJoin([mqU16(topic.length), mqEnc(topic), mqEnc(payloadStr || '')]);
+  try { MQ.ws.send(mqPacket(3, retain ? 1 : 0, body)); return true; } catch (e) { return false; }
+}
+
+function mqSubscribe(topic) {
+  if (!MQ.ws || MQ.ws.readyState !== 1) return false;
+  var id = (MQ.packetId++ % 65535) || 1;
+  var body = mqJoin([mqU16(id), mqU16(topic.length), mqEnc(topic), new Uint8Array([0])]);
+  try { MQ.ws.send(mqPacket(8, 2, body)); return true; } catch (e) { return false; }
+}
+
+function mqConnect(url, cb) {
+  MQ.url = url || MQ_DEFAULT_URL;
+  MQ.clientId = 'arena_' + Math.random().toString(36).slice(2, 10);
+  MQ.ready = false;
+  MQ.buf = new Uint8Array(0);
+  MQ.onReady = cb || null;
+  try {
+    MQ.ws = new WebSocket(MQ.url, 'mqtt');
+  } catch (e) {
+    netSigStatus('无法连接 MQTT：' + e.message);
+    return;
+  }
+  MQ.ws.binaryType = 'arraybuffer';
+
+  MQ.ws.onopen = function () {
+    // CONNECT：协议名 MQTT / 版本 4 / clean session / keepalive 60
+    var body = mqJoin([
+      mqU16(4), mqEnc('MQTT'),
+      new Uint8Array([4, 0x02]),
+      mqU16(60),
+      mqU16(MQ.clientId.length), mqEnc(MQ.clientId)
+    ]);
+    try { MQ.ws.send(mqPacket(1, 0, body)); } catch (e) { /* 忽略 */ }
+    if (MQ.keepTimer) clearInterval(MQ.keepTimer);
+    MQ.keepTimer = setInterval(function () {
+      if (MQ.ws && MQ.ws.readyState === 1) {
+        try { MQ.ws.send(mqPacket(12, 0, new Uint8Array(0))); } catch (e) { /* 忽略 */ }
+      }
+    }, 30000);
+  };
+
+  MQ.ws.onmessage = function (ev) {
+    MQ.buf = mqJoin([MQ.buf, new Uint8Array(ev.data)]);
+    mqDrain();
+  };
+
+  MQ.ws.onclose = function () {
+    MQ.ready = false;
+    if (MQ.keepTimer) { clearInterval(MQ.keepTimer); MQ.keepTimer = null; }
+    if (MQ.onClose) MQ.onClose();
+  };
+
+  MQ.ws.onerror = function () {
+    netSigStatus('MQTT 连接出错（地址是否正确？公共 broker 偶尔会限流）');
+  };
+}
+
+function mqDrain() {
+  while (MQ.buf.length >= 2) {
+    var type = MQ.buf[0] >> 4;
+    var flags = MQ.buf[0] & 0x0f;
+    var mult = 1, len = 0, i = 1, b;
+    do {
+      if (i >= MQ.buf.length) return;
+      b = MQ.buf[i++];
+      len += (b & 127) * mult;
+      mult *= 128;
+    } while (b & 0x80);
+    if (MQ.buf.length < i + len) return;
+    var body = MQ.buf.slice(i, i + len);
+    MQ.buf = MQ.buf.slice(i + len);
+    mqHandle(type, flags, body);
+  }
+}
+
+function mqHandle(type, flags, body) {
+  if (type === 2) {                       // CONNACK
+    MQ.ready = (body[1] === 0);
+    if (MQ.ready && MQ.onReady) { var f = MQ.onReady; MQ.onReady = null; f(); }
+  } else if (type === 3) {                // PUBLISH
+    if (body.length < 2) return;
+    var tl = (body[0] << 8) | body[1];
+    var topic = mqDec(body.slice(2, 2 + tl));
+    var payload = mqDec(body.slice(2 + tl));
+    if (MQ.onMessage) MQ.onMessage(topic, payload, (flags & 1) === 1);
+  } else if (type === 14) {               // DISCONNECT
+    MQ.ready = false;
+  }
+}
+
+/* ---------- 房间列表 ---------- */
+function netSigStatus(msg) { netStatus(msg); }
+
+function netSigGuessUrl() {
+  try { localStorage.getItem('arenaMqUrl'); } catch (e) { /* 忽略 */ }
+  return MQ_DEFAULT_URL;
+}
+
+function netSigConnect() {
+  var input = document.getElementById('netSigUrl');
+  var url = (input && input.value ? input.value : '').trim() || MQ_DEFAULT_URL;
+  try { localStorage.setItem('arenaMqUrl', url); } catch (e) { /* 忽略 */ }
+  netSigStatus('正在连接 MQTT ' + url + ' …');
+  mqConnect(url, function () {
+    SIG.rooms = {};
+    MQ.onMessage = netSigOnMessage;
+    MQ.onClose = function () { netSigStatus('MQTT 已断开'); };
+    mqSubscribe(MQ_TOPIC_ROOMS + '+');
+    netSigStatus('已连接公共 MQTT，正在收集房间…');
+    setTimeout(function () { netSigRenderRooms(); netSigStatus('房间列表已更新（公共 MQTT）'); }, 1200);
+  });
+}
+
+function netSigRefresh() {
+  if (!MQ.ready) { netSigConnect(); return; }
+  // 重新订阅一次即可让 broker 把 retained 房间重发过来
+  SIG.rooms = {};
+  mqSubscribe(MQ_TOPIC_ROOMS + '+');
+  setTimeout(netSigRenderRooms, 800);
+}
+
+function netEsc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+  });
+}
+
+function netSigRenderRooms(emptyText) {
+  var box = document.getElementById('netRoomList');
+  if (!box) return;
+  var list = [];
+  for (var k in SIG.rooms) if (SIG.rooms.hasOwnProperty(k)) list.push(SIG.rooms[k]);
+  list.sort(function (a, b) { return b.ts - a.ts; });
+  if (!list.length) {
+    box.innerHTML = '<div>' + netEsc(emptyText || '当前没有房间，点「开房间」建一个') + '</div>';
+    return;
+  }
+  var html = '';
+  for (var i = 0; i < list.length; i++) {
+    var r = list[i];
+    var age = Math.max(0, Math.round((Date.now() - r.ts) / 1000));
+    html += '<div class="net-room">' +
+      '<span><span class="rn">' + netEsc(r.name) + '</span> ' +
+      '<span class="rm">' + netEsc(r.id) + ' · ' + age + ' 秒前</span></span>' +
+      '<button data-room="' + netEsc(r.id) + '">加入</button></div>';
+  }
+  box.innerHTML = html;
+  var btns = box.querySelectorAll('button[data-room]');
+  for (var j = 0; j < btns.length; j++) {
+    btns[j].addEventListener('click', function () {
+      netSigJoin(this.getAttribute('data-room'));
+    });
+  }
+}
+
+// 收到 MQTT 消息
+function netSigOnMessage(topic, payload, retained) {
+  if (topic.indexOf(MQ_TOPIC_ROOMS) === 0) {
+    var id = topic.slice(MQ_TOPIC_ROOMS.length);
+    if (!id || id.indexOf('/') >= 0) return;
+    if (!payload) { delete SIG.rooms[id]; netSigRenderRooms(); return; }  // 空 retained = 房间已关
+    var data;
+    try { data = JSON.parse(payload); } catch (e) { return; }
+    if (!data || !data.o) return;
+    SIG.rooms[id] = { id: id, name: data.n || '房间', offer: data.o, ts: data.t || Date.now() };
+    netSigRenderRooms();
+    return;
+  }
+  if (topic.indexOf(MQ_TOPIC_ANS) === 0) {
+    var rid = topic.slice(MQ_TOPIC_ANS.length);
+    if (rid !== SIG.roomId || !NET.pc) return;
+    var ans;
+    try { ans = JSON.parse(payload); } catch (e) { return; }
+    if (!ans || !ans.a) return;
+    NET.pc.setRemoteDescription(JSON.parse(ans.a)).then(function () {
+      netSigStatus('已收到房客 answer，等待连接建立…');
+    }).catch(function (e) {
+      netSigStatus('应用 answer 失败：' + e.message);
+    });
+  }
+}
+
+/* ---------- 房主开房 ---------- */
+function netSigHost() {
+  if (!MQ.ready) { netSigConnect(); return; }
+  var nameEl = document.getElementById('netRoomName');
+  var name = (nameEl && nameEl.value ? nameEl.value : '').trim() || '我的房间';
+  var id = Math.random().toString(36).slice(2, 8);
+
+  if (NET.pc) { try { NET.pc.close(); } catch (e) { /* 忽略 */ } }
+  NET.mode = 'host';
+  NET.pc = netNewPC();
+  NET.dc = NET.pc.createDataChannel('game', { ordered: true });
+  netBindChannel(NET.dc);
+  netSigStatus('正在生成 offer…');
+
+  NET.pc.createOffer().then(function (offer) {
+    return NET.pc.setLocalDescription(offer);
+  }).then(function () {
+    return netWaitIce(NET.pc);
+  }).then(function () {
+    SIG.roomId = id;
+    SIG.roomName = name;
+    var ok = mqPublish(MQ_TOPIC_ROOMS + id,
+      JSON.stringify({ n: name, o: JSON.stringify(NET.pc.localDescription), t: Date.now() }), true);
+    mqSubscribe(MQ_TOPIC_ANS + id);
+    netSigStatus(ok
+      ? ('已开房：' + name + '（房间号 ' + id + '），等待房客加入…')
+      : '发布房间失败，请重试');
+    netSigRefresh();
+  }).catch(function (e) {
+    netSigStatus('开房失败：' + e.message);
+  });
+}
+
+/* ---------- 房客加入 ---------- */
+function netSigJoin(roomId) {
+  var room = SIG.rooms[roomId];
+  if (!room) { netSigStatus('房间信息已过期，请刷新列表'); return; }
+  if (!MQ.ready) { netSigStatus('MQTT 还没连上'); return; }
+
+  if (NET.pc) { try { NET.pc.close(); } catch (e) { /* 忽略 */ } }
+  NET.mode = 'guest';
+  NET.pc = netNewPC();
+  NET.pc.ondatachannel = function (ev) { netBindChannel(ev.channel); };
+  netSigStatus('正在连接房间 ' + room.name + ' …');
+
+  NET.pc.setRemoteDescription(JSON.parse(room.offer)).then(function () {
+    return NET.pc.createAnswer();
+  }).then(function (answer) {
+    return NET.pc.setLocalDescription(answer);
+  }).then(function () {
+    return netWaitIce(NET.pc);
+  }).then(function () {
+    mqPublish(MQ_TOPIC_ANS + roomId,
+      JSON.stringify({ a: JSON.stringify(NET.pc.localDescription) }), false);
+    netSigStatus('已提交加入请求，等待连接建立…');
+  }).catch(function (e) {
+    netSigStatus('加入失败：' + e.message);
+  });
+}
+
+/* ---------- 关房 ---------- */
+function netSigCloseRoom() {
+  if (!SIG.roomId) return;
+  var id = SIG.roomId;
+  SIG.roomId = null;
+  try {
+    // 发空 retained 消息，把这个房间从列表中抹掉
+    mqPublish(MQ_TOPIC_ROOMS + id, '', true);
+  } catch (e) { /* 忽略 */ }
+}
+
+/* ============ 面板控制 ============ */
+/* ============ 面板控制 ============ */
+/* ============ 面板控制 ============ */
+var overlay = document.getElementById('overlay');
+var ctrlBar = document.getElementById('ctrlBar');
+var ctrlBtn = document.getElementById('ctrlBtn');
+
+function hideRolePanels(hide) {
+  var el = document.getElementById('rolePanels');
+  if (!el) return;
+  el.classList.toggle('hide', hide);
+}
+
+function syncCtrlBtn() {
+  if (netIsGuest()) {
+    ctrlBtn.textContent = netGuestRunning ? '房主对局中…' : '等房主开始';
+    ctrlBtn.className = 'start';
+    ctrlBtn.disabled = true;
+    if (delayBtn) delayBtn.disabled = true;
+    if (modeBtn) modeBtn.disabled = true;
+    if (bossBtn) bossBtn.disabled = true;
+    return;
+  }
+  ctrlBtn.disabled = false;
+  if (running) {
+    ctrlBtn.textContent = '终止对局';
+    ctrlBtn.className = 'stop';
+  } else {
+    ctrlBtn.textContent = '开始';
+    ctrlBtn.className = 'start';
+  }
+}
+
+/* ============ 开始 / 终止 / 结束 ============ */
+function startMatch() {
+  if (netIsGuest()) { netStatus('房客端不能开始，请等房主点开始'); return; }
+  resetMatch();
+  overlay.classList.add('hidden');
+  hideRolePanels(true);
+  ctrlBar.classList.remove('hidden');
+  running = true;
+  finished = false;
+  lastTime = 0;
+  setPageLock(isManualPlay());     // 联机对局中锁定页面滚动
+  syncCtrlBtn();
+  netSendMeta();
+  if (rafId) cancelAnimationFrame(rafId);
+  rafId = requestAnimationFrame(loop);
+}
+
+function terminateMatch() {
+  running = false;
+  finished = false;
+  if (rafId) cancelAnimationFrame(rafId);
+  rafId = null;
+  setPageLock(false);
+  resetMatch();
+  syncTopNames();
+  updateHUD();
+  render();
+  hideRolePanels(false);
+  syncCtrlBtn();
+  netSendMeta();
+}
+
+function toggleMatch() {
+  if (toggleMatch.busy) return;
+  if (netIsGuest()) { netStatus('房客端不能开始，请等房主点开始'); return; }
+  toggleMatch.busy = true;
+  if (running) terminateMatch();
+  else startMatch();
+  setTimeout(function () { toggleMatch.busy = false; }, 120);
+}
+
+function endMatch(winningTeam) {
+  running = false;
+  if (rafId) cancelAnimationFrame(rafId);
+  trains = [];
+  finished = true;
+  setPageLock(false);
+  syncCtrlBtn();
+  var winner = winningTeam === 0 ? '蓝方获胜！' :
+    winningTeam === 1 ? '粉方获胜！' : '平局！';
+  if (bossMode) winner = winningTeam === 0 ? '蓝方击败 BOSS！' : 'BOSS 获胜！';
+  overlay.querySelector('.ov-title').textContent = winner;
+  var summaries = [];
+  // BOSS 队可能有几十个分裂体，汇总成一条，避免结算文字刷屏
+  var bossTeamAlive = 0, bossTeamTotal = 0;
+  for (var i = 0; i < balls.length; i++) {
+    if (bossMode && teamOf(i) === 1) {
+      bossTeamTotal++;
+      if (hp[i] > 0) bossTeamAlive++;
+      continue;
+    }
+    var prefix = '';
+    if (bossMode) prefix = i === 2 ? '蓝队员2 ' : '蓝队员1 ';
+    else if (teamMode) prefix = (teamOf(i) === 0 ? '蓝' : '粉') + '队员' + (Math.floor(i / 2) + 1) + ' ';
+    summaries.push(prefix + ROLES[selected[i]].name + ' 剩余 ' + Math.ceil(hp[i]));
+  }
+  if (bossMode && bossTeamTotal > 0) {
+    var bossName = ROLES[selected[1]].name;
+    summaries.push('BOSS ' + bossName + ' 存活 ' + bossTeamAlive + '/' + bossTeamTotal + ' 体');
+  }
+  overlay.querySelector('.ov-sub').textContent = summaries.join(' · ');
+  document.getElementById('sideConfirmBtn').textContent = '再来一局';
+  hideRolePanels(false);
+  overlay.classList.remove('hidden');
+  syncCtrlBtn();
+  ctrlBar.classList.remove('hidden');
+  netSendMeta();
+  render();
+}
+
+ctrlBtn.addEventListener('click', toggleMatch);
+
+var modeBtn = document.getElementById('modeBtn');
+var bossBtn = document.getElementById('bossBtn');
+
+// 统一刷新模式相关的 UI（按钮态、身份面板布局）
+function syncModeUI() {
+  modeBtn.classList.toggle('active', teamMode);
+  modeBtn.setAttribute('aria-pressed', String(teamMode));
+  if (bossBtn) {
+    bossBtn.classList.toggle('active', bossMode);
+    bossBtn.setAttribute('aria-pressed', String(bossMode));
+  }
+  var panels = document.getElementById('rolePanels');
+  panels.classList.toggle('team-mode', teamMode || bossMode);
+  panels.classList.toggle('boss-mode', bossMode);
+  // 右列标题：普通模式是「粉方」，BOSS 战改成「BOSS」
+  var sideLabel = document.getElementById('sideLabel1');
+  if (sideLabel) sideLabel.textContent = bossMode ? 'BOSS' : '粉方';
+  if (bossMode) syncBossList();
+}
+
+// 退出 BOSS 战：恢复粉方原本选的角色
+function exitBossMode() {
+  if (!bossMode) return;
+  bossMode = false;
+  if (BOSS_ROLE_INDEX >= 0) selected[1] = savedSelected1;
+  syncModeUI();
+}
+
+// 三个模式互斥：1v1 / 2v2 / BOSS 战
+function setMode(mode) {
+  if (netIsGuest()) return;             // 模式由房主决定
+  if (running || finished || delayTimer) return;
+  if (mode === 'boss') {
+    if (bossMode) { exitBossMode(); }
+    else {
+      if (!teamMode) savedSelected1 = selected[1];
+      else savedSelected1 = 0;
+      teamMode = false;
+      bossMode = true;
+      // 用 BOSS 列表里选中的那只，没选过就用第一只
+      selected[1] = selectedBoss >= 0 ? selectedBoss : BOSS_ROLE_INDEX;
+    }
+  } else if (mode === '2v2') {
+    if (teamMode) { teamMode = false; }
+    else {
+      if (bossMode) exitBossMode();
+      // 医学检查：1v1 不能带医者
+      if (ROLES[selected[0]].role === 'medic' || ROLES[selected[1]].role === 'medic') return;
+      teamMode = true;
+    }
+  }
+  syncModeUI();
+  resetMatch();
+  syncTopNames();
+  syncRolePickButtons();
+  syncModeButton();
+  updateHUD();
+  render();
+}
+
+modeBtn.addEventListener('click', function () { setMode('2v2'); });
+if (bossBtn) bossBtn.addEventListener('click', function () { setMode('boss'); });
+
+/* ============ 延时 5 秒开始 ============ */
+var delayBtn = document.getElementById('delayBtn');
+var delayTimer = null;
+delayBtn.addEventListener('click', function () {
+  if (delayTimer || running) return;          // 已在倒计时 / 对局进行中，忽略
+  var n = 5;
+  delayBtn.textContent = '准备中 ' + n;
+  delayBtn.disabled = true;
+  modeBtn.disabled = true;
+  if (bossBtn) bossBtn.disabled = true;
+  delayTimer = setInterval(function () {
+    n--;
+    if (n <= 0) {
+      clearInterval(delayTimer);
+      delayTimer = null;
+      delayBtn.textContent = '延时 5 秒开始';
+      delayBtn.disabled = false;
+      if (bossBtn) bossBtn.disabled = false;
+      syncModeButton();
+      startMatch();                            // 到点开赛
+    } else {
+      delayBtn.textContent = '准备中 ' + n;
+    }
+  }, 1000);
+});
+document.getElementById('sideConfirmBtn').addEventListener('click', function () {
+  overlay.classList.add('hidden');
+  terminateMatch();
+});
+
+/* ============ 联机面板的事件绑定 ============ */
+(function bindNetUI() {
+  var netBtn = document.getElementById('netBtn');
+  var netHostStep = document.getElementById('netHostStep');
+  var netGuestStep = document.getElementById('netGuestStep');
+  if (!netBtn) return;
+
+  netBtn.addEventListener('click', function () {
+    netPanel(true);
+    netBtn.classList.add('active');
+  });
+  document.getElementById('netCloseBtn').addEventListener('click', function () {
+    netPanel(false);
+    if (!NET.connected) netBtn.classList.remove('active');
+  });
+  document.getElementById('netHostBtn').addEventListener('click', function () {
+    netHostStep.classList.add('on');
+    netGuestStep.classList.remove('on');
+    NET.mode = 'host';
+    netStatus('房主模式：① 生成邀请码 → 发给房客 → ② 粘贴应答码 → 连接');
+  });
+  document.getElementById('netDisconnectBtn').addEventListener('click', function () {
+    netTeardown('已手动断开，切回单机模式');
+    netHostStep.classList.remove('on');
+    netGuestStep.classList.remove('on');
+  });
+  document.getElementById('netGuestBtn').addEventListener('click', function () {
+    netGuestStep.classList.add('on');
+    netHostStep.classList.remove('on');
+    NET.mode = 'guest';
+    netStatus('房客模式：粘贴房主的邀请码 → 生成应答码 → 发回房主');
+  });
+  document.getElementById('netMakeOfferBtn').addEventListener('click', function () { netHostMakeOffer(); });
+  document.getElementById('netApplyAnswerBtn').addEventListener('click', function () { netHostApplyAnswer(); });
+  document.getElementById('netMakeAnswerBtn').addEventListener('click', function () { netGuestMakeAnswer(); });
+  document.getElementById('netCopyOfferBtn').addEventListener('click', function () { netCopyFrom('netOfferOut'); });
+  document.getElementById('netCopyAnswerBtn').addEventListener('click', function () { netCopyFrom('netAnswerOut'); });
+
+  /* ---- 房间列表相关 ---- */
+  var sigUrlInput = document.getElementById('netSigUrl');
+  if (sigUrlInput) {
+    var saved = '';
+    try { saved = localStorage.getItem('arenaMqUrl') || ''; } catch (e) { saved = ''; }
+    sigUrlInput.value = saved || MQ_DEFAULT_URL;
+  }
+  document.getElementById('netSigConnBtn').addEventListener('click', function () { netSigConnect(); });
+  document.getElementById('netSigRefreshBtn').addEventListener('click', function () { netSigRefresh(); });
+  document.getElementById('netCreateRoomBtn').addEventListener('click', function () { netSigHost(); });
+  netSigRenderRooms();
+
+  // 本地文件（file://）打开时浏览器会禁止 WebSocket，房间列表用不了 → 直接提示改用手动配对码
+  var isLocalFile = false;
+  try { isLocalFile = (location.protocol === 'file:'); } catch (e) { isLocalFile = false; }
+  if (isLocalFile) {
+    var hint = document.getElementById('netFileHint');
+    var box = document.getElementById('netSigBox');
+    if (hint) hint.classList.remove('hidden');
+    if (box) box.classList.add('hidden');
+    // 手动配对那组按钮改成主按钮，避免用户找不到
+    var hostBtn = document.getElementById('netHostBtn');
+    var guestBtn = document.getElementById('netGuestBtn');
+    if (hostBtn) hostBtn.classList.remove('ghost');
+    if (guestBtn) guestBtn.classList.remove('ghost');
+  }
+})();
+
+// 复制连接码：优先用剪贴板 API，失败则选中文本让用户手动复制（iPad 上很常见）
+function netCopyFrom(id) {
+  var el = document.getElementById(id);
+  if (!el || !el.value) { netStatus('还没有内容可复制'); return; }
+  el.focus();
+  el.select();
+  el.setSelectionRange(0, el.value.length);
+  var ok = false;
+  try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+  if (ok) { netStatus('已复制到剪贴板（' + el.value.length + ' 字符）'); return; }
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(el.value).then(function () {
+      netStatus('已复制到剪贴板（' + el.value.length + ' 字符）');
+    }, function () {
+      netStatus('已全选，请手动长按复制');
+    });
+    return;
+  }
+  netStatus('已全选，请手动长按复制');
+}
+
+/* ============ 鼠标 / 触摸：朝指针方向释放技能 ============ */
+// 房客端没有本地模拟，所以不能用本地的 running 判断；用 netGuestRunning
+function netCanAct() {
+  if (!isManualPlay()) return false;
+  return NET.mode === 'guest' ? netGuestRunning : running;
+}
+
+function netEventToCanvas(clientX, clientY) {
+  var rect = cv.getBoundingClientRect();
+  if (!rect.width || !rect.height) return null;
+  return {
+    x: (clientX - rect.left) / rect.width * W,
+    y: (clientY - rect.top) / rect.height * H
+  };
+}
+
+function netPointerCast(clientX, clientY) {
+  if (!netCanAct()) return;
+  var p = netEventToCanvas(clientX, clientY);
+  if (!p) return;
+  if (NET.mode === 'guest') {
+    // 房客：把自己的点击坐标发给房主，由房主按球 1 的实际位置换算角度
+    netSend({ t: 'cast', x: Math.round(p.x), y: Math.round(p.y) });
+    floatTexts.push({ x: p.x, y: p.y, text: '◎', life: 0.45, color: '#ffffff' });
+  } else {
+    castSkill(0, angleToPoint(0, p.x, p.y));
+  }
+}
+
+// 指针移动：船锚等"有朝向"的技能实时跟随指针（不需要点击）
+function netPointerAim(clientX, clientY) {
+  if (!netCanAct()) return;
+  var p = netEventToCanvas(clientX, clientY);
+  if (!p) return;
+  if (NET.mode === 'guest') {
+    netSend({ t: 'aim', x: Math.round(p.x), y: Math.round(p.y) });
+  } else {
+    aimHook(0, angleToPoint(0, p.x, p.y));
+  }
+}
+
+(function bindPointer() {
+  if (!cv || !cv.addEventListener) return;
+
+  // 只认鼠标左键；触摸/手写笔一律算
+  function isPrimary(ev) {
+    if (ev.pointerType === 'mouse' && ev.button !== 0) return false;
+    return true;
+  }
+  cv.addEventListener('pointerdown', function (ev) {
+    if (!isPrimary(ev)) return;
+    if (ev.preventDefault) ev.preventDefault();
+    netPointerCast(ev.clientX, ev.clientY);
+  });
+  // 长按拖动 = 一直移动鼠标指针（手机/平板）
+  cv.addEventListener('pointermove', function (ev) {
+    netPointerAim(ev.clientX, ev.clientY);
+  });
+  // 阻止触摸时的滚动 / 长按菜单 / 双指缩放，避免对局中页面被拖走
+  cv.addEventListener('touchstart', function (ev) {
+    if (ev.cancelable) ev.preventDefault();
+  }, { passive: false });
+  cv.addEventListener('touchmove', function (ev) {
+    if (ev.cancelable) ev.preventDefault();
+  }, { passive: false });
+  cv.addEventListener('contextmenu', function (ev) { ev.preventDefault(); });
+
+  // 兜底：老浏览器只有 click
+  if (!('PointerEvent' in window)) {
+    cv.addEventListener('click', function (ev) { netPointerCast(ev.clientX, ev.clientY); });
+  }
+})();
+
+/* ============ 启动：先渲染一次，再用 setInterval 持续驱动 ============ */
+// 找出第一个 BOSS 专属角色的下标（bossOnly: true），BOSS 战里把它塞进 selected[1]
+for (var bi = 0; bi < ROLES.length; bi++) {
+  if (ROLES[bi].bossOnly) { BOSS_ROLE_INDEX = bi; break; }
+}
+selectedBoss = BOSS_ROLE_INDEX;
+buildRoleList(0);
+buildRoleList(1);
+buildRoleList(2);
+buildRoleList(3);
+buildBossList();
+syncModeUI();
+syncTopNames();
+resetMatch();
+syncRolePickButtons();
+syncModeButton();
+syncCtrlBtn();
+ctrlBar.classList.remove('hidden');
+render();
+
+setInterval(function () {
+  try {
+    globalTime += 1 / 60;
+    if (netIsGuest()) {
+      // 房客：不跑模拟，每帧用最近一次状态重绘（60fps 刷新，避免画面卡在状态包上）
+      netRender();
+    } else {
+      update(1 / 60);
+      netHostTick(1 / 60);   // 房主：约 30Hz 把状态推给房客
+      render();
+    }
+  } catch (e) {
+    /* 静默吞错，避免循环自爆 */
+  }
+}, 16);
+</script>
+</body>
+</html>
