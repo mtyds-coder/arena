@@ -4146,7 +4146,14 @@ function netTeardown(reason) {
   if (NET.tearingDown) return;      // 防止 close() 触发 onclose 再进来
   NET.tearingDown = true;
   var wasLinked = (NET.mode !== null) || NET.connected;
-  // 房主断开时把房间从信令服务上撤掉
+  // 用户主动断开：停止自动重连，并把房间从信令服务上撤掉
+  try {
+    if (typeof SIG !== 'undefined') {
+      SIG.wantConnected = false;
+      SIG.retry = 0;
+      if (SIG.retryTimer) { clearTimeout(SIG.retryTimer); SIG.retryTimer = null; }
+    }
+  } catch (e) { /* 忽略 */ }
   try { if (typeof netSigCloseRoom === 'function') netSigCloseRoom(); } catch (e) { /* 忽略 */ }
   NET.connected = false;
   NET.mode = null;
@@ -4618,8 +4625,13 @@ var MQ_BROKERS = [
   'wss://test.mosquitto.org:8081/mqtt'
 ];
 var MQ_DEFAULT_URL = MQ_BROKERS[0];
+// 房间存活：房主每 60 秒重发一次 retained 消息当心跳；房客只显示 3 分钟内的房间
+var MQ_ROOM_HEARTBEAT_MS = 60000;
+var MQ_ROOM_TTL_MS = 180000;
 var SIG = { base: '', roomId: null, roomName: '', rooms: {}, listTimer: null, ansHandler: null,
-  cand: [], ci: 0, failTimer: null };
+  cand: [], ci: 0, failTimer: null,
+  // 自动重连：wantConnected 表示用户希望保持连接；retry 是退避次数
+  wantConnected: false, retry: 0, retryTimer: null };
 
 /* ---------- MQTT 编解码 ---------- */
 function mqEnc(s) { return new TextEncoder().encode(s); }
@@ -4777,6 +4789,9 @@ function netSigCandidates() {
 }
 
 function netSigConnect() {
+  SIG.wantConnected = true;      // 用户主动点了「连接」，之后断线要自动重连
+  SIG.retry = 0;
+  if (SIG.retryTimer) { clearTimeout(SIG.retryTimer); SIG.retryTimer = null; }
   SIG.cand = netSigCandidates();
   SIG.ci = 0;
   SIG.rooms = {};
@@ -4785,7 +4800,7 @@ function netSigConnect() {
 
 function netSigTryNext() {
   if (SIG.ci >= SIG.cand.length) {
-    netSigStatus('公共 MQTT 全部连不上（可能被限流或临时抽风）。稍等 1~2 分钟再点「连接」，或直接用下面的「我是房主（手动）」配对码联机。');
+    netSigScheduleRetry('公共 MQTT 全部连不上');
     return;
   }
   var url = SIG.cand[SIG.ci];
@@ -4811,16 +4826,41 @@ function netSigTryNext() {
   mqConnect(url, function () {
     if (SIG.failTimer) { clearTimeout(SIG.failTimer); SIG.failTimer = null; }
     MQ.onFail = null;
+    SIG.retry = 0;
+    if (SIG.retryTimer) { clearTimeout(SIG.retryTimer); SIG.retryTimer = null; }
     try { localStorage.setItem('arenaMqBroker', url); } catch (e) { /* 忽略 */ }
     var input = document.getElementById('netSigUrl');
     if (input) input.value = url;
     SIG.rooms = {};
     MQ.onMessage = netSigOnMessage;
-    MQ.onClose = function () { netSigStatus('MQTT 已断开（可点「连接」重连）'); };
+    MQ.onClose = function () { netSigScheduleRetry('连接中断'); };
     mqSubscribe(MQ_TOPIC_ROOMS + '+');
+    // 重连后如果自己是房主，把房间重新挂上去（否则房客看不到）
+    if (SIG.roomId && SIG.offerJson) {
+      mqPublish(MQ_TOPIC_ROOMS + SIG.roomId,
+        JSON.stringify({ n: SIG.roomName, o: SIG.offerJson, t: Date.now() }), true);
+      mqSubscribe(MQ_TOPIC_ANS + SIG.roomId);
+    }
     netSigStatus('已连接 ' + url.replace('wss://', '').replace('/mqtt', '') + '，正在收集房间…');
     setTimeout(function () { netSigRenderRooms(); netSigStatus('房间列表已更新（公共 MQTT）'); }, 1200);
   });
+}
+
+// 退避重连：2s → 4s → 8s → 15s → 30s（封顶），成功一次就重置
+function netSigScheduleRetry(reason) {
+  if (!SIG.wantConnected) return;
+  if (SIG.retryTimer) return;
+  var delays = [2000, 4000, 8000, 15000, 30000];
+  var d = delays[Math.min(SIG.retry, delays.length - 1)];
+  SIG.retry++;
+  netSigStatus((reason ? reason + '，' : '') + Math.round(d / 1000) + ' 秒后自动重连（第 ' + SIG.retry + ' 次）…');
+  SIG.retryTimer = setTimeout(function () {
+    SIG.retryTimer = null;
+    if (!SIG.wantConnected) return;
+    SIG.ci = 0;
+    SIG.cand = netSigCandidates();
+    netSigTryNext();
+  }, d);
 }
 
 function netSigRefresh() {
@@ -4840,8 +4880,15 @@ function netEsc(s) {
 function netSigRenderRooms(emptyText) {
   var box = document.getElementById('netRoomList');
   if (!box) return;
+  var now = Date.now();
   var list = [];
-  for (var k in SIG.rooms) if (SIG.rooms.hasOwnProperty(k)) list.push(SIG.rooms[k]);
+  for (var k in SIG.rooms) {
+    if (!SIG.rooms.hasOwnProperty(k)) continue;
+    var r = SIG.rooms[k];
+    // 只显示 3 分钟内还有心跳的房间，避免僵尸房间（房主直接关标签页留下的 retained 消息）
+    if (!r.ts || now - r.ts > MQ_ROOM_TTL_MS) { delete SIG.rooms[k]; continue; }
+    list.push(r);
+  }
   list.sort(function (a, b) { return b.ts - a.ts; });
   if (!list.length) {
     box.innerHTML = '<div>' + netEsc(emptyText || '当前没有房间，点「开房间」建一个') + '</div>';
@@ -4849,12 +4896,12 @@ function netSigRenderRooms(emptyText) {
   }
   var html = '';
   for (var i = 0; i < list.length; i++) {
-    var r = list[i];
-    var age = Math.max(0, Math.round((Date.now() - r.ts) / 1000));
+    var r2 = list[i];
+    var age = Math.max(0, Math.round((now - r2.ts) / 1000));
     html += '<div class="net-room">' +
-      '<span><span class="rn">' + netEsc(r.name) + '</span> ' +
-      '<span class="rm">' + netEsc(r.id) + ' · ' + age + ' 秒前</span></span>' +
-      '<button data-room="' + netEsc(r.id) + '">加入</button></div>';
+      '<span><span class="rn">' + netEsc(r2.name) + '</span> ' +
+      '<span class="rm">' + netEsc(r2.id) + ' · ' + age + ' 秒前</span></span>' +
+      '<button data-room="' + netEsc(r2.id) + '">加入</button></div>';
   }
   box.innerHTML = html;
   var btns = box.querySelectorAll('button[data-room]');
@@ -4913,9 +4960,11 @@ function netSigHost() {
   }).then(function () {
     SIG.roomId = id;
     SIG.roomName = name;
+    SIG.offerJson = JSON.stringify(NET.pc.localDescription);
     var ok = mqPublish(MQ_TOPIC_ROOMS + id,
-      JSON.stringify({ n: name, o: JSON.stringify(NET.pc.localDescription), t: Date.now() }), true);
+      JSON.stringify({ n: name, o: SIG.offerJson, t: Date.now() }), true);
     mqSubscribe(MQ_TOPIC_ANS + id);
+    if (ok) netSigStartHeartbeat();
     netSigStatus(ok
       ? ('已开房：' + name + '（房间号 ' + id + '），等待房客加入…')
       : '发布房间失败，请重试');
@@ -4953,18 +5002,32 @@ function netSigJoin(roomId) {
 }
 
 /* ---------- 关房 ---------- */
+function netSigStopHeartbeat() {
+  if (SIG.hbTimer) { clearInterval(SIG.hbTimer); SIG.hbTimer = null; }
+}
+
+function netSigStartHeartbeat() {
+  netSigStopHeartbeat();
+  SIG.hbTimer = setInterval(function () {
+    if (!SIG.roomId || !MQ.ready || !SIG.offerJson) return;
+    // 心跳：重发 retained 消息刷新时间戳，房客端据此判断房间还活着
+    mqPublish(MQ_TOPIC_ROOMS + SIG.roomId,
+      JSON.stringify({ n: SIG.roomName, o: SIG.offerJson, t: Date.now() }), true);
+  }, MQ_ROOM_HEARTBEAT_MS);
+}
+
 function netSigCloseRoom() {
+  netSigStopHeartbeat();
   if (!SIG.roomId) return;
   var id = SIG.roomId;
   SIG.roomId = null;
+  SIG.offerJson = null;
   try {
     // 发空 retained 消息，把这个房间从列表中抹掉
     mqPublish(MQ_TOPIC_ROOMS + id, '', true);
   } catch (e) { /* 忽略 */ }
 }
 
-/* ============ 面板控制 ============ */
-/* ============ 面板控制 ============ */
 /* ============ 面板控制 ============ */
 var overlay = document.getElementById('overlay');
 var ctrlBar = document.getElementById('ctrlBar');
@@ -5220,6 +5283,11 @@ document.getElementById('sideConfirmBtn').addEventListener('click', function () 
   document.getElementById('netSigRefreshBtn').addEventListener('click', function () { netSigRefresh(); });
   document.getElementById('netCreateRoomBtn').addEventListener('click', function () { netSigHost(); });
   netSigRenderRooms();
+
+  // 每 15 秒重画一次房间列表：既更新「多少秒前」，也把超过 3 分钟没心跳的房间剔掉
+  setInterval(function () {
+    if (MQ.ready && !SIG.hbTimer) netSigRenderRooms();
+  }, 15000);
 
   // 本地文件（file://）打开时浏览器会禁止 WebSocket，房间列表用不了 → 直接提示改用手动配对码
   var isLocalFile = false;
