@@ -1,0 +1,1964 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>小球竞技场 v1.1.2</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    background: #070912;
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+    color: #e8ecf5;
+    min-height: 100vh;
+    display: flex; flex-direction: column; align-items: center;
+    padding: 12px 0 24px;
+    overflow-x: hidden;
+  }
+  h1 {
+    font-size: 20px; letter-spacing: 4px; margin-top: 6px;
+    color: #4fc3ff; text-shadow: 0 0 18px rgba(79,195,255,.5);
+  }
+
+  /* ===== 顶部双方 ===== */
+  #topbar {
+    display: flex; align-items: center; justify-content: center; gap: 10px;
+    width: min(94vw, 640px); margin-top: 12px;
+  }
+  .player {
+    flex: 1; display: flex; flex-direction: column; gap: 6px;
+    padding: 8px 12px; border-radius: 12px;
+    background: rgba(255,255,255,.04);
+    border: 1px solid rgba(255,255,255,.08);
+  }
+  .player .row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .pname { font-size: 14px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .hpNum { font-size: 12px; font-variant-numeric: tabular-nums; color: #c7cee0; white-space: nowrap; }
+  .hpWrap { height: 8px; border-radius: 4px; background: rgba(255,255,255,.1); overflow: hidden; }
+  .hp-fill { height: 100%; width: 100%; border-radius: 4px; transition: width .25s linear, background .2s; }
+  .vs { font-size: 13px; font-weight: 800; color: #8a93a6; flex: 0 0 auto; }
+
+  /* ===== 战场（身份列表已移到下方，战场不再被覆盖）===== */
+  #wrap {
+    margin-top: 14px; position: relative;
+    width: min(92vw, 600px); aspect-ratio: 1 / 1;
+  }
+  canvas {
+    width: 100%; height: 100%; display: block; border-radius: 16px;
+    background: #0b1020;
+    box-shadow: 0 0 0 2px rgba(255,255,255,.08), 0 0 40px rgba(79,195,255,.12);
+  }
+
+  /* ===== 身份列表：一行横向列表，战场下方 ===== */
+  #rolePanels {
+    width: min(94vw, 640px);
+    margin-top: 14px;
+    background: rgba(13,17,32,.72);
+    border: 1px solid rgba(255,255,255,.08);
+    border-radius: 14px;
+    padding: 6px;
+    display: flex; flex-direction: column; gap: 2px;
+    transition: opacity .2s, transform .2s;
+  }
+  #rolePanels.hide { opacity: 0; pointer-events: none; }
+  #rolePanels.hide.left  { transform: translateY(10px); }
+  #rolePanels.hide.right { transform: translateY(10px); }
+  .rp-head {
+    font-size: 11px; color: #8a93a6; letter-spacing: 1px;
+    padding: 5px 8px 2px;
+  }
+  .rp-body {
+    display: flex; gap: 14px; padding: 4px 6px 6px;
+  }
+  .rp-col { flex: 1 1 50%; display: flex; flex-direction: column; gap: 6px; }
+  .rp-side {
+    font-size: 12px; letter-spacing: .14em; text-align: center;
+    padding: 3px 0; border-radius: 7px;
+    background: rgba(255,255,255,.06);
+  }
+  .rp-side0 { color: #7fd4ff; }
+  .rp-side1 { color: #ff9ec7; }
+  .role-list {
+    display: flex; flex-direction: column; gap: 6px;
+  }
+  .role-btn {
+    flex: 1 1 auto;
+    width: 100%;
+    box-sizing: border-box;
+    text-align: left; cursor: pointer;
+    padding: 8px 12px; border-radius: 10px;
+    background: rgba(255,255,255,.03);
+    border: 1px solid rgba(255,255,255,.09);
+    color: #c7cee0; font-size: 13px; font-weight: 600;
+    transition: transform .1s, background .15s, border-color .15s;
+    display: flex; align-items: center; gap: 9px;
+  }
+  .role-btn:active { transform: scale(.97); }
+  .role-btn .rdot {
+    flex: 0 0 auto; width: 9px; height: 9px; border-radius: 50%;
+    background: currentColor; opacity: .55;
+    box-shadow: 0 0 8px currentColor;
+  }
+  .role-btn .rname { white-space: nowrap; }
+
+  .role-btn { display: flex; align-items: center; gap: 8px; }
+  .role-btn .rname { font-size: 13px; font-weight: 600; flex-shrink: 0; }
+  .role-btn .rdesc {
+    font-size: 10px; color: #9aa7b4; line-height: 1.25;
+    text-align: left; flex: 1 1 auto;
+  }
+  .role-btn.selected {
+    background: rgba(255,255,255,.11);
+    border-color: currentColor;
+    box-shadow: inset 3px 0 0 currentColor, 0 0 14px -4px currentColor;
+  }
+  .role-btn.selected .rdot { opacity: 1; }
+  .role-btn[disabled] {
+    opacity: .35; cursor: not-allowed;
+  }
+
+  /* ===== 底部按钮 ===== */
+  #ctrlBar { margin-top: 16px; }
+  #ctrlBtn {
+    cursor: pointer; min-width: 160px; padding: 12px 36px;
+    font-size: 16px; font-weight: 800; letter-spacing: 2px;
+    border-radius: 30px; border: none; color: #070912;
+    background: linear-gradient(90deg, #4fc3ff, #2dd4bf);
+    box-shadow: 0 6px 24px rgba(79,195,255,.35);
+    transition: transform .1s, opacity .2s;
+  }
+  #ctrlBtn:active { transform: scale(.94); }
+  #ctrlBtn.start { background: linear-gradient(90deg, #4fc3ff, #2dd4bf); }
+  #ctrlBtn.stop  { background: linear-gradient(90deg, #ff6b9d, #ffb84f); }
+  #delayBtn {
+    margin-left: 12px;
+    cursor: pointer; min-width: 160px; padding: 12px 36px;
+    font-size: 16px; font-weight: 800; letter-spacing: 2px;
+    border-radius: 30px; border: none; color: #070912;
+    background: linear-gradient(90deg, #b388ff, #7c4dff);
+    box-shadow: 0 6px 24px rgba(179,136,255,.35);
+    transition: transform .1s, opacity .2s;
+  }
+  #delayBtn:active { transform: scale(.94); }
+  #delayBtn:disabled { opacity: .5; cursor: not-allowed; }
+
+  /* ===== 结算面板 ===== */
+  #overlay {
+    position: fixed; inset: 0; z-index: 20;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(3,5,12,.72); backdrop-filter: blur(6px);
+  }
+  #overlay.hidden { display: none; }
+  .ov-card {
+    text-align: center; padding: 28px 40px; border-radius: 20px;
+    background: rgba(13,17,32,.95); border: 1px solid rgba(255,255,255,.12);
+    box-shadow: 0 20px 60px rgba(0,0,0,.6);
+  }
+  .ov-title { font-size: 26px; font-weight: 800; margin-bottom: 8px; }
+  .ov-sub { font-size: 14px; color: #8a93a6; margin-bottom: 20px; }
+  #sideConfirmBtn {
+    cursor: pointer; padding: 11px 34px; font-size: 15px; font-weight: 700;
+    border-radius: 26px; border: none; color: #070912;
+    background: linear-gradient(90deg, #4fc3ff, #ff5c8a);
+  }
+  .skill {
+    font-size: 11px; color: #8a93a6; margin-top: 2px;
+    letter-spacing: .5px; min-height: 15px;
+  }
+  .player.left .skill { text-align: left; }
+  .player.right .skill { text-align: right; }
+</style>
+</head>
+<body>
+  <h1>小 球 竞 技 场</h1>
+
+  <div id="topbar">
+    <div class="player left">
+      <div class="row">
+        <span class="pname" id="pname0">炮手</span>
+        <span class="hpNum" id="hpNum0">100 / 100</span>
+      </div>
+      <div class="hpWrap"><div class="hp-fill" id="hp0" style="background:#4fc3ff"></div></div>
+      <div class="skill" id="skill0">散射齐射</div>
+    </div>
+    <span class="vs">VS</span>
+    <div class="player right">
+      <div class="row">
+        <span class="pname" id="pname1">炮手</span>
+        <span class="hpNum" id="hpNum1">100 / 100</span>
+      </div>
+      <div class="hpWrap"><div class="hp-fill" id="hp1" style="background:#ff6b9d"></div></div>
+      <div class="skill" id="skill1">散射齐射</div>
+    </div>
+  </div>
+
+  <div id="wrap">
+    <canvas id="cv" width="600" height="600"></canvas>
+  </div>
+
+  <div id="rolePanels">
+    <div class="rp-head">选择身份</div>
+    <div class="rp-body">
+      <div class="rp-col">
+        <div class="rp-side rp-side0">蓝方</div>
+        <div class="role-list" id="roles0"></div>
+      </div>
+      <div class="rp-col">
+        <div class="rp-side rp-side1">粉方</div>
+        <div class="role-list" id="roles1"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="ctrlBar">
+    <button id="ctrlBtn" class="start">开始</button>
+    <button id="delayBtn" class="start">延时 5 秒开始</button>
+  </div>
+
+  <div id="overlay" class="hidden">
+    <div class="ov-card">
+      <div class="ov-title">对局结束</div>
+      <div class="ov-sub">一方已被击败</div>
+      <button id="sideConfirmBtn">再来一局</button>
+    </div>
+  </div>
+
+<script>
+"use strict";
+/* ============ 常量 ============ */
+var W = 600, H = 600;
+var ARENA = { x: 60, y: 60, size: 480, thickness: 4 };
+var BALL_R = 16;
+var BULLET_R = 5;
+var MAX_HP = 100;
+var BALL_SPEED = 3.4;
+var BULLET_SPEED = 5;
+var SKILL_CD = 1.4;
+var ROLE_HOOK_SPIN = 5.0;   // 舰长旋转持续秒数
+var ROLE_HOOK_COOLDOWN = 10.0; // 舰长钩中释放后船锚消失冷却
+var ROLE_HOOK_RANGE = 250;  // 船锚射程（像素）
+var ROLE_HOOK_DMG_MIN = 8;  // 每次撞边最低伤害
+var ROLE_HOOK_DMG_MAX = 15;  // 每次撞边最高伤害
+var ROLE_HOOK_HITS = 5;     // 旋转期间最多撞边次数，超过即提前释放
+var ROLE_GUN_CD = 7.0;      // 炮手齐射冷却
+var ROLE_GUN_COUNT = 8;     // 炮手齐射弹数
+var ROLE_GUN_DMG = 10;      // 炮手每发伤害
+var ROLE_GUN_SPREAD = 240 * Math.PI / 180; // 扇形 240°
+var ROLE_GUN_BURST = 0.4;   // 齐射出膛间隔
+var ROLE_GUNNER_CD = 5.0;  // 枪手发射冷却
+var ROLE_GUNNER_RICO = 9999;  // 枪手子弹反弹次数上限（9999 视为无限反弹，不打到人就不消失）
+
+var ROLE_COWBOY_CD = 10.0;       // 牛仔齐射冷却（秒）
+var ROLE_COWBOY_SHOTS = 6;       // 牛仔每次发射的子弹数
+var ROLE_COWBOY_PAUSE = 0.3;    // 牛仔齐射逐发间隔（秒）
+var ROLE_COWBOY_RICO = 3;        // 牛仔子弹反弹次数上限
+var ROLE_COWBOY_DMG_MIN = 10;     // 牛仔单发伤害下限
+var ROLE_COWBOY_DMG_MAX = 15;    // 牛仔单发伤害上限
+var ROLE_COWBOY_SPREAD = 0.7;    // 牛仔 6 发扇形总张角（弧度）
+var ROLE_GUNNER_DMG_MIN = 5;
+var ROLE_GUNNER_DMG_MAX = 12;
+var ROLE_SHIELD_HP = 150;   // 盾兵血量上限
+var ROLE_SHIELD_CD = 1.2;    // 盾兵重撞冷却
+var ROLE_SHIELD_BUMP = 10;  // 盾兵贴脸伤害
+var ROLE_DISPATCHER_CD = 20.0; // 调度员列车召唤冷却
+var ROLE_TRAIN_DMG = 10;
+var ROLE_TRAIN_SPEED = 4.5;   // 每帧移动像素
+var ROLE_TRAIN_LENGTH = ARENA.size;
+var ROLE_TRAIN_WIDTH = 32;
+var ROLE_DYN_CD = 10.0;     // 爆破手投掷冷却（秒）
+var ROLE_DYN_FUSE = 1.6;    // 炸药引信（秒）
+var ROLE_DYN_DMG = 35;      // 炸药爆炸伤害
+var ROLE_DYN_RADIUS = 120;  // 爆炸半径（像素）
+var ROLE_DYN_SPEED = 5.2;   // 炸药飞行速度
+var ROLE_VAMPIRE_DMG_MIN = 6;  // 吸血鬼单次贴身最低伤害
+var ROLE_VAMPIRE_DMG_MAX = 16; // 吸血鬼单次贴身最高伤害
+var ROLE_VAMPIRE_LOCK = 1.5;   // 吸血鬼吸血冷却（秒），乱弹后避免贴着连续暴击
+var ROLE_GHOST_CYCLE = 12.0;   // 幽灵技能总周期（秒）
+var ROLE_GHOST_WARP = 4.0;     // 虚化无敌持续时长（秒）
+var ROLE_GHOST_CHARGE = 0.4;   // 虚化结束后充能开火延迟（秒）
+var ROLE_GHOST_RETURN = 0.5;   // 累计受伤返还比例
+var ROLE_GHOST_RICO = 3;       // 返还子弹撞墙反弹次数
+
+var ROLES = [
+  { name: '炮手', color: '#4fc3ff', desc: '每7秒向四周齐射8枚', maxHp: MAX_HP,
+    role: 'gun', ai: 'keep', skillName: '散射齐射', skillDesc: '每 7 秒朝四周扇形齐射 8 枚，每枚 10 伤' },
+  { name: '舰长', color: '#1f9ea8', desc: '船锚钩住·撞边反转方向', maxHp: 50,
+    role: 'hook', ai: 'chase', skillName: '船锚钩', skillDesc: '撞边每次反转旋转方向，每次 8~15 伤' },
+  { name: '盾兵', color: '#c99a3f', desc: '150血·贴脸10伤', maxHp: ROLE_SHIELD_HP,
+    role: 'shield', ai: 'keep', skillName: '重撞', skillDesc: '本体撞击造成 10 伤害' },
+  { name: '爆破手', color: '#ff8a3d', desc: '每10秒朝敌方投炸药·爆炸35伤·96px范围', maxHp: MAX_HP,
+    role: 'dynamite', skill: '每 10 秒朝敌方掷出一枚炸药，引信 1.6 秒，96px 内爆炸造成 35 伤害。', cd: 10, dynDmg: 35 },
+  { name: '爆破手V2', color: '#ff5c4a', desc: '每5秒朝敌方投炸药·爆炸35伤·96px范围', maxHp: MAX_HP,
+    role: 'dynamite', ai: 'keep', skillName: '投掷炸药', cd: 5, dynDmg: 35,
+    skillDesc: '每 5 秒朝敌方掷出一枚炸药，引信 1.6 秒，96px 内爆炸造成 35 伤害' },
+  { name: '爆破手V3', color: '#b87dff', desc: '每10秒朝敌方投炸药·爆炸60伤·96px范围', maxHp: MAX_HP,
+    role: 'dynamite', ai: 'keep', skillName: '重爆炸药', cd: 10, dynDmg: 60,
+    skillDesc: '每 10 秒朝敌方掷出一枚高爆炸药，引信 1.6 秒，96px 内爆炸造成 60 伤害' },
+  { name: '吸血鬼', color: '#ff2d6f', desc: '贴身6~16伤·吸回等量血量', maxHp: MAX_HP,
+    role: 'vampire', ai: 'keep', skillName: '吸血撕咬',
+    skillDesc: '每次贴到敌方造成 6~16 伤害，并回复自身等量生命' },
+  { name: '枪手', color: '#7cff5e', desc: '每5秒射1发·可撞墙反弹·5~12伤', maxHp: MAX_HP,
+    role: 'gunner', ai: 'keep', skillName: '反弹弹幕',
+    skillDesc: '每 5 秒朝敌方射出 1 发子弹，无限反弹直至命中，每发 5~12 伤害' },
+  { name: '牛仔', color: '#c9a24b', desc: '每10秒齐射6发·可撞墙反弹3次·10~15伤', maxHp: MAX_HP,
+    role: 'cowboy', ai: 'keep', skillName: '六连齐射',
+    skillDesc: '每 10 秒向敌方齐射 6 发子弹，发射时自身停止移动，每发可撞墙反弹 3 次、造成 10~15 伤害' },
+  { name: '幽灵', color: '#9be7ff', desc: '每12秒虚化4秒无敌·结束后将受伤的50%化为子弹', maxHp: MAX_HP,
+    role: 'ghost', ai: 'keep', skillName: '相位虚化',
+    skillDesc: '每 12 秒进入 4 秒虚化无敌，期间受到的伤害在虚化结束后取 50% 化为一发撞墙反弹 3 次的子弹' },
+  { name: '调度员', color: '#ffd166', desc: '每20秒召唤4辆火车·碰撞反弹并造成10伤', maxHp: MAX_HP,
+    role: 'dispatcher', ai: 'keep', skillName: '列车调度',
+    skillDesc: '每 20 秒召唤 2 辆纵向火车和 2 辆横向火车；撞到小球会使其反弹，敌方每次碰撞受到 10 伤害' }
+];
+
+/* ============ 画布 ============ */
+var cv = document.getElementById('cv');
+var ctx = cv.getContext('2d');
+
+/* ============ 状态 ============ */
+var running = false;
+var finished = false;
+var selected = [0, 0];
+var hp = [MAX_HP, MAX_HP];
+var balls = [ mkBall(0), mkBall(1) ];
+var bullets = [];
+var particles = [];
+var floatTexts = [];
+var cd = [0, 0];              // 通用技能冷却（炮手齐射 / 盾兵贴脸帧锁）
+var hook = [ null, null ];      // 舰长的钩子状态：{ t, owner, target, cx, cy, r, ang, released, cd, burstFired }
+var gunBurst = [ null, null ];  // 炮手齐射出膛节奏：{ cd, fired, total }
+var bumpLock = [ 0, 0 ];        // 盾兵同帧贴脸伤害锁
+var dynamites = [];          // 爆破手炸药：{ owner, x, y, vx, vy, fuse, fuseMax, r }
+var trains = [];
+var previewT = 0;
+var spawnT = 0;
+var previewX0 = 0, previewY0 = 0, previewX1 = 0, previewY1 = 0;
+var lastTime = 0;
+var rafId = null;
+var globalTime = 0;              // 累计运行时间（秒），驱动常驻船锚公转/自转
+
+/* ============ 工具 ============ */
+function rand(a, b) { return a + Math.random() * (b - a); }
+function shade(hex, amt) {
+  var c = hex.replace('#', '');
+  var r = parseInt(c.substr(0, 2), 16);
+  var g = parseInt(c.substr(2, 2), 16);
+  var b = parseInt(c.substr(4, 2), 16);
+  r = Math.max(0, Math.min(255, r + r * amt));
+  g = Math.max(0, Math.min(255, g + g * amt));
+  b = Math.max(0, Math.min(255, b + b * amt));
+  return 'rgb(' + (r | 0) + ',' + (g | 0) + ',' + (b | 0) + ')';
+}
+function glowOf(hex) {
+  var c = hex.replace('#', '');
+  var r = parseInt(c.substr(0, 2), 16);
+  var g = parseInt(c.substr(2, 2), 16);
+  var bb = parseInt(c.substr(4, 2), 16);
+  return 'rgba(' + r + ',' + g + ',' + bb + ',.5)';
+}
+function clampSpeed(b) {
+  var sp = Math.hypot(b.vx, b.vy);
+  if (sp > 0) {
+    b.vx = b.vx / sp * BALL_SPEED;
+    b.vy = b.vy / sp * BALL_SPEED;
+  }
+}
+function easeOutCubic(t) { return 1 - Math.pow(1 - t, 3); }
+function spawnTarget(side) {
+  var cx = ARENA.x + ARENA.size / 2;
+  var cy = ARENA.y + ARENA.size / 2;
+  return {
+    x: cx + (side === 0 ? -1 : 1) * ARENA.size * 0.24,
+    y: cy + (Math.random() * 2 - 1) * ARENA.size * 0.16
+  };
+}
+function mkBall(side) {
+  var r = ROLES[selected[side]];
+  return { x: 0, y: 0, vx: 0, vy: 0, color: r.color, glow: glowOf(r.color) };
+}
+
+/* ============ 身份列表 ============ */
+function buildRoleList(side) {
+  var box = document.getElementById('roles' + side);
+  box.innerHTML = '';
+  for (var idx = 0; idx < ROLES.length; idx++) {
+    (function (idx) {
+      var r = ROLES[idx];
+      var btn = document.createElement('button');
+      btn.className = 'role-btn' + (selected[side] === idx ? ' selected' : '');
+      btn.style.color = r.color;
+      btn.innerHTML = '<span class="rdot"></span>'
+                    + '<span class="rname">' + r.name + '</span>'
+                    + '<span class="rdesc">' + r.desc + '</span>';
+      btn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        if (running || finished) return;
+        selected[side] = idx;
+        hp[side] = ROLES[idx].maxHp;
+        cd[side] = ROLES[idx].role === 'dispatcher' ? ROLE_DISPATCHER_CD : 0;
+        syncRolePickButtons();
+        syncTopNames();
+        updateHUD();
+        balls[side] = mkBall(side);
+        var tg = spawnTarget(side);
+        balls[side].x = tg.x;
+        balls[side].y = tg.y;
+        render();
+      });
+      box.appendChild(btn);
+    })(idx);
+  }
+}
+function syncRolePickButtons() {
+  for (var side = 0; side < 2; side++) {
+    var btns = document.getElementById('roles' + side).querySelectorAll('.role-btn');
+    for (var i = 0; i < btns.length; i++) {
+      btns[i].classList.toggle('selected', i === selected[side]);
+    }
+  }
+}
+function syncTopNames() {
+  var c0 = ROLES[selected[0]].color, c1 = ROLES[selected[1]].color;
+  document.getElementById('pname0').textContent = ROLES[selected[0]].name;
+  document.getElementById('pname0').style.color = c0;
+  document.getElementById('hp0').style.background = c0;
+  document.getElementById('pname1').textContent = ROLES[selected[1]].name;
+  document.getElementById('pname1').style.color = c1;
+  document.getElementById('hp1').style.background = c1;
+  balls[0].color = c0; balls[0].glow = glowOf(c0);
+  balls[1].color = c1; balls[1].glow = glowOf(c1);
+}
+
+/* ============ 对局控制 ============ */
+function resetMatch() {
+  balls[0] = mkBall(0);
+  balls[1] = mkBall(1);
+  var cy = ARENA.y + ARENA.size / 2;
+  balls[0].spawnFrom = { x: ARENA.x - BALL_R - 8, y: cy };
+  balls[1].spawnFrom = { x: ARENA.x + ARENA.size + BALL_R + 8, y: cy };
+  balls[0].x = balls[0].spawnFrom.x;
+  balls[0].y = balls[0].spawnFrom.y;
+  balls[1].x = balls[1].spawnFrom.x;
+  balls[1].y = balls[1].spawnFrom.y;
+  balls[0].vx = 0; balls[0].vy = 0;
+  balls[1].vx = 0; balls[1].vy = 0;
+  var pt0 = spawnTarget(0), pt1 = spawnTarget(1);
+  previewX0 = pt0.x; previewY0 = pt0.y;
+  previewX1 = pt1.x; previewY1 = pt1.y;
+  balls[0].x = previewX0; balls[0].y = previewY0;
+  balls[1].x = previewX1; balls[1].y = previewY1;
+  spawnT = 0;
+  hp = [ ROLES[selected[0]].maxHp, ROLES[selected[1]].maxHp ];
+  cd = [0, 0];
+  for (var side = 0; side < 2; side++) {
+    if (ROLES[selected[side]].role === 'dispatcher') cd[side] = ROLE_DISPATCHER_CD;
+  }
+  hook = [ null, null ];
+  dynamites = [];
+  trains = [];
+  gunBurst = [ null, null ];
+  bumpLock = [ 0, 0 ];
+  bullets = [];
+  particles = [];
+  floatTexts = [];
+  finished = false;
+  updateHUD();
+}
+
+/* ============ 技能 ============ */
+// 通用伤害入口：被钩住期间无法受到角色技能以外的额外处理
+function dealDamage(target, amount, srcColor, srcX, srcY) {
+  if (amount <= 0) return false;
+  // 幽灵虚化期间：免伤，但把本应受到的伤害累加，用于虚化结束后返还
+  if (balls[target] && balls[target].ghostPhase === 'warp' && amount > 0) {
+    balls[target].ghostDmg = (balls[target].ghostDmg || 0) + amount;
+    return false;
+  }
+  // 舰长带敌旋转期间，舰长本人无敌
+  if (target === 0 && ROLES[selected[0]].role === 'hook' && hook[0] && !hook[0].released) return false;
+  if (target === 1 && ROLES[selected[1]].role === 'hook' && hook[1] && !hook[1].released) return false;
+  // 被钩住期间，伤害照算但延后结算胜负：等钩子释放后再判
+  var hooked = false;
+  for (var i = 0; i < 2; i++) {
+    if (hook[i] && !hook[i].released && hook[i].target === target) hooked = true;
+  }
+  hp[target] = Math.max(0, hp[target] - amount);
+  spawnParticles(srcX, srcY, srcColor, 14);
+  floatTexts.push({ x: balls[target].x, y: balls[target].y - 22, text: '-' + amount, life: 1, color: srcColor });
+  flashHUD(target);
+  updateHUD();
+  // 钩中期间延后到释放后再判，避免动画被中途打断
+  if (hooked) return true;
+  if (hp[target] <= 0 && !finished) endMatch();
+  return true;
+}
+
+// 炮手：向四周扇形齐射 8 枚
+function fireGun(owner) {
+  if (cd[owner] > 0) return;
+  cd[owner] = ROLE_GUN_CD;
+  var b = balls[owner];
+  var dir = owner === 0 ? 1 : -1;
+  var baseAng = Math.atan2(b.vy, b.vx);
+  if (baseAng === 0 && b.vx === 0) baseAng = dir > 0 ? 0 : Math.PI;
+  var start = baseAng - ROLE_GUN_SPREAD / 2;
+  var step = ROLE_GUN_SPREAD / Math.max(1, ROLE_GUN_COUNT - 1);
+  var fired = 0;
+  for (var i = 0; i < ROLE_GUN_COUNT; i++) {
+    var ang = start + step * i;
+    bullets.push({
+      x: b.x + Math.cos(ang) * (BALL_R + 4),
+      y: b.y + Math.sin(ang) * (BALL_R + 4),
+      vx: Math.cos(ang) * BULLET_SPEED,
+      vy: Math.sin(ang) * BULLET_SPEED,
+      owner: owner,
+      color: b.color,
+      dmg: ROLE_GUN_DMG,
+      life: 2.6
+    });
+    fired++;
+  }
+  // 用齐射节奏呈现：记录已出膛数量，在 update 里逐发延迟实际激活
+  gunBurst[owner] = { cd: 0, fired: 0, total: fired, ang0: start, step: step, baseAng: baseAng };
+  // 上述 push 是一次全部入场的简版；改为逐发：先清空，由节奏补发
+  bullets.splice(bullets.length - fired, fired);
+  b.vx -= dir * 0.5;
+}
+
+// 舰长：尝试用船锚钩住敌人
+function fireHook(owner) {
+  if (hook[owner] && !hook[owner].released) return;
+  if (hook[owner] && hook[owner].cd > 0) return;
+  var b = balls[owner];
+  var target = 1 - owner;
+  var tb = balls[target];
+  var d = Math.hypot(tb.x - b.x, tb.y - b.y);
+  if (d > ROLE_HOOK_RANGE) return; // 船锚射程有限
+  hook[owner] = {
+    t: 0,
+    owner: owner,
+    target: target,
+    cx: b.x, cy: b.y,
+    r: d,
+    ang: Math.atan2(tb.y - b.y, tb.x - b.x),
+    omega: (owner === 0 ? 1 : -1) * 6.2,
+    released: false,
+    cd: 0,
+    hits: 0
+  };
+  // 出钩时把方向记下来，供待机轨道跟随（此时 h 还没进 hook 数组，需单独存）
+  // 钩中瞬间锁死目标速度，避免残留速度干扰轨道运动
+  tb.vx = 0;
+  tb.vy = 0;
+  floatTexts.push({ x: b.x, y: b.y - 30, text: '钩中！', life: 1.1, color: b.color });
+}
+
+// 舰长旋转中撞墙时结算一次伤害，并反转旋转方向
+function hookEdgeHit(h) {
+  var dmg = ROLE_HOOK_DMG_MIN + Math.floor(Math.random() * (ROLE_HOOK_DMG_MAX - ROLE_HOOK_DMG_MIN + 1)); // 8~15
+  dealDamage(h.target, dmg, balls[h.owner].color, balls[h.target].x, balls[h.target].y);
+  spawnParticles(balls[h.target].x, balls[h.target].y, '#fff', 18);
+  h.hits++;
+  h.omega = -h.omega; // 每次撞边立即反转旋转方向
+  floatTexts.push({ x: balls[h.target].x, y: balls[h.target].y - 34, text: '反弹!', life: 0.8, color: '#ffffff' });
+}
+
+// 盾兵：本体贴脸一次 10 伤
+function fireShield(owner) {
+  if (cd[owner] > 0) return;
+  cd[owner] = ROLE_SHIELD_CD;
+  var target = 1 - owner;
+  var b = balls[owner], tb = balls[target];
+  var dist = Math.hypot(tb.x - b.x, tb.y - b.y);
+  if (dist > 0 && dist < BALL_R * 2 + 8) {
+    var nx = (tb.x - b.x) / dist;
+    var ny = (tb.y - b.y) / dist;
+    dealDamage(target, ROLE_SHIELD_BUMP, b.color, b.x, b.y);
+    tb.vx += nx * 1.8;
+    tb.vy += ny * 1.8;
+    b.vx *= 0.92;
+    b.vy *= 0.92;
+    clampSpeed(tb);
+    clampSpeed(b);
+  }
+}
+
+// 统一技能触发入口（由 AI 按身份调用）
+function trySkill(owner) {
+  var role = ROLES[selected[owner]].role;
+  if (hook[owner] && !hook[owner].released) return; // 旋转期间本人不主动开别的
+  if (role === 'gun') fireGun(owner);
+  else if (role === 'hook') fireHook(owner);
+  else if (role === 'shield') fireShield(owner);
+  else if (role === 'dynamite') fireDynamite(owner);
+}
+
+
+/* ============ 爆破手：炸药 ============ */
+// 爆破手：向随机方向掷出一枚炸药
+function fireDynamite(owner) {
+  var b = balls[owner];
+  var enemy = balls[1 - owner];
+  var ang = Math.atan2(enemy.y - b.y, enemy.x - b.x) + rand(-0.35, 0.35);
+  var sp = ROLE_DYN_SPEED;
+  dynamites.push({
+    owner: owner,
+    x: b.x + Math.cos(ang) * (BALL_R + 6),
+    y: b.y + Math.sin(ang) * (BALL_R + 6),
+    vx: Math.cos(ang) * sp,
+    vy: Math.sin(ang) * sp,
+    fuse: ROLE_DYN_FUSE,
+    fuseMax: ROLE_DYN_FUSE,
+    r: 9
+  });
+  cd[owner] = (ROLES[selected[owner]] && ROLES[selected[owner]].cd) || ROLE_DYN_CD;
+}
+
+// 炸药飞行、引信倒计时、爆炸
+function updateDynamites(dt) {
+  for (var i = dynamites.length - 1; i >= 0; i--) {
+    var d = dynamites[i];
+    d.x += d.vx;
+    d.y += d.vy;
+    d.fuse -= dt;
+    var inArena = d.x > ARENA.x && d.x < ARENA.x + ARENA.size
+                && d.y > ARENA.y && d.y < ARENA.y + ARENA.size;
+    if (d.fuse > 0 && inArena) continue;
+    // 引信到时或飞出场地 → 爆炸
+    var opp = 1 - d.owner;
+    var tgt = balls[opp];
+    var dist = Math.hypot(tgt.x - d.x, tgt.y - d.y);
+    var dynRole = ROLES[selected[d.owner]];
+    var dynDmg = (dynRole && dynRole.dynDmg) || ROLE_DYN_DMG;
+    if (dist <= ROLE_DYN_RADIUS) {
+      dealDamage(opp, dynDmg, balls[d.owner].color, d.x, d.y);
+    }
+    // 爆炸视觉：环形粒子 + 伤害飘字
+    for (var k = 0; k < 34; k++) {
+      var a = (k / 34) * Math.PI * 2;
+      particles.push({
+        x: d.x, y: d.y,
+        vx: Math.cos(a) * rand(2.2, 5.4),
+        vy: Math.sin(a) * rand(2.2, 5.4),
+        life: rand(0.4, 0.9), maxLife: 0.9,
+        color: k % 3 === 0 ? '#fff3c4' : (k % 3 === 1 ? '#ffb347' : '#ff5a1f'),
+        size: rand(2, 5)
+      });
+    }
+    floatTexts.push({ x: d.x, y: d.y - 10, text: '35', life: 0.9, color: '#ff8a3d' });
+    dynamites.splice(i, 1);
+  }
+}
+
+function summonTrains(owner) {
+  var laneInset = ROLE_TRAIN_WIDTH / 2 + BALL_R;
+  var verticalLane1 = rand(ARENA.x + laneInset, ARENA.x + ARENA.size / 2 - laneInset);
+  var verticalLane2 = rand(ARENA.x + ARENA.size / 2 + laneInset, ARENA.x + ARENA.size - laneInset);
+  var horizontalLane1 = rand(ARENA.y + laneInset, ARENA.y + ARENA.size / 2 - laneInset);
+  var horizontalLane2 = rand(ARENA.y + ARENA.size / 2 + laneInset, ARENA.y + ARENA.size - laneInset);
+  trains.push(
+    {
+      owner: owner, hit: [false, false],
+      width: ROLE_TRAIN_WIDTH, length: ROLE_TRAIN_LENGTH,
+      axis: 'vertical', x: verticalLane1,
+      y: ARENA.y - ROLE_TRAIN_LENGTH / 2,
+      vy: ROLE_TRAIN_SPEED
+    },
+    {
+      owner: owner, hit: [false, false],
+      width: ROLE_TRAIN_WIDTH, length: ROLE_TRAIN_LENGTH,
+      axis: 'vertical', x: verticalLane2,
+      y: ARENA.y - ROLE_TRAIN_LENGTH / 2,
+      vy: ROLE_TRAIN_SPEED
+    },
+    {
+      owner: owner, hit: [false, false],
+      width: ROLE_TRAIN_WIDTH, length: ROLE_TRAIN_LENGTH,
+      axis: 'horizontal', x: ARENA.x - ROLE_TRAIN_LENGTH / 2,
+      y: horizontalLane1,
+      vx: ROLE_TRAIN_SPEED
+    },
+    {
+      owner: owner, hit: [false, false],
+      width: ROLE_TRAIN_WIDTH, length: ROLE_TRAIN_LENGTH,
+      axis: 'horizontal', x: ARENA.x - ROLE_TRAIN_LENGTH / 2,
+      y: horizontalLane2,
+      vx: ROLE_TRAIN_SPEED
+    }
+  );
+  floatTexts.push({
+    x: ARENA.x + ARENA.size / 2,
+    y: ARENA.y + 30,
+    text: '列车进站！',
+    life: 1.2,
+    color: ROLES[selected[owner]].color
+  });
+}
+
+function updateTrains(dt) {
+  var pixelsPerFrame = dt * 60;
+  var left = ARENA.x, right = ARENA.x + ARENA.size;
+  var top = ARENA.y, bottom = ARENA.y + ARENA.size;
+
+  for (var i = trains.length - 1; i >= 0; i--) {
+    var train = trains[i];
+    train.x += (train.vx || 0) * pixelsPerFrame;
+    train.y += (train.vy || 0) * pixelsPerFrame;
+
+    if (train.axis === 'vertical' &&
+        train.y - train.length / 2 > bottom) {
+      trains.splice(i, 1);
+      continue;
+    }
+    if (train.axis === 'horizontal' &&
+        train.x - train.length / 2 > right) {
+      trains.splice(i, 1);
+      continue;
+    }
+
+    for (var ballIndex = 0; ballIndex < balls.length; ballIndex++) {
+      var ball = balls[ballIndex];
+      var firstHit = !train.hit[ballIndex];
+      var halfWidth = train.width / 2;
+      var halfLength = train.length / 2;
+      var closestX = Math.max(train.x - halfLength,
+        Math.min(ball.x, train.x + halfLength));
+      var closestY = Math.max(train.y - halfWidth,
+        Math.min(ball.y, train.y + halfWidth));
+      if (train.axis === 'vertical') {
+        closestX = Math.max(train.x - halfWidth,
+          Math.min(ball.x, train.x + halfWidth));
+        closestY = Math.max(train.y - halfLength,
+          Math.min(ball.y, train.y + halfLength));
+      }
+
+      var dx = ball.x - closestX;
+      var dy = ball.y - closestY;
+      var distance = Math.hypot(dx, dy);
+      if (distance > BALL_R) {
+        train.hit[ballIndex] = false;
+        continue;
+      }
+
+      var nx, ny;
+      if (distance > 0) {
+        nx = dx / distance;
+        ny = dy / distance;
+      } else {
+        var offsetX = ball.x - train.x;
+        var offsetY = ball.y - train.y;
+        var penetrationX = (train.axis === 'vertical' ? halfWidth : halfLength) - Math.abs(offsetX);
+        var penetrationY = (train.axis === 'vertical' ? halfLength : halfWidth) - Math.abs(offsetY);
+        if (penetrationX < penetrationY) {
+          nx = offsetX < 0 ? -1 : 1;
+          ny = 0;
+        } else {
+          nx = 0;
+          ny = offsetY < 0 ? -1 : 1;
+        }
+      }
+
+      var trainVx = train.vx || 0;
+      var trainVy = train.vy || 0;
+      var relativeVn = (ball.vx - trainVx) * nx + (ball.vy - trainVy) * ny;
+      if (relativeVn < 0) {
+        ball.vx -= 2 * relativeVn * nx;
+        ball.vy -= 2 * relativeVn * ny;
+      }
+      if (distance > 0) {
+        var pushOut = BALL_R - distance + 0.5;
+        ball.x += nx * pushOut;
+        ball.y += ny * pushOut;
+      } else {
+        if (nx !== 0) {
+          ball.x = train.x + nx *
+            ((train.axis === 'vertical' ? halfWidth : halfLength) + BALL_R + 0.5);
+        } else {
+          ball.y = train.y + ny *
+            ((train.axis === 'vertical' ? halfLength : halfWidth) + BALL_R + 0.5);
+        }
+      }
+      if (firstHit) {
+        train.hit[ballIndex] = true;
+        if (ballIndex !== train.owner) {
+          dealDamage(ballIndex, ROLE_TRAIN_DMG,
+            ROLES[selected[train.owner]].color, ball.x, ball.y);
+          if (finished) return;
+        }
+        spawnParticles(ball.x, ball.y, ROLES[selected[train.owner]].color, 10);
+        floatTexts.push({
+          x: ball.x,
+          y: ball.y - BALL_R - 8,
+          text: ballIndex === train.owner ? '反弹' : '-10',
+          life: 0.8,
+          color: ROLES[selected[train.owner]].color
+        });
+      }
+    }
+  }
+}
+
+// 盾兵贴脸伤害锁逐帧衰减
+function decayLocks(dt) {
+  for (var i = 0; i < 2; i++) {
+    if (bumpLock[i] > 0) bumpLock[i] = Math.max(0, bumpLock[i] - dt);
+  }
+}
+
+/* ============ 特效 ============ */
+function spawnParticles(x, y, color, n) {
+  for (var i = 0; i < n; i++) {
+    var a = rand(0, Math.PI * 2);
+    var sp = rand(1, 4);
+    particles.push({
+      x: x, y: y,
+      vx: Math.cos(a) * sp,
+      vy: Math.sin(a) * sp,
+      life: 1, color: color
+    });
+  }
+}
+
+/* ============ 更新逻辑 ============ */
+function update(dt) {
+  if (!running) {
+    previewT += dt;
+    // 待机位在 resetMatch() 里固定好，这里只叠加平滑的浮动，避免每帧归位导致抖动
+    var ph = Math.sin(previewT * 2.2) * 6;
+    balls[0].x = previewX0;
+    balls[0].y = previewY0 + ph;
+    balls[1].x = previewX1;
+    balls[1].y = previewY1 - ph;   // 两球相位相反，一上一下错开
+    return;
+  }
+
+  var left = ARENA.x + BALL_R;
+  var right = ARENA.x + ARENA.size - BALL_R;
+  var top = ARENA.y + BALL_R;
+  var bottom = ARENA.y + ARENA.size - BALL_R;
+
+  if (spawnT < 1) {
+    spawnT = Math.min(1, spawnT + dt * 1.6);
+    var k = easeOutCubic(spawnT);
+    for (var i = 0; i < 2; i++) {
+      var tg = spawnTarget(i);
+      balls[i].x = balls[i].spawnFrom.x + (tg.x - balls[i].spawnFrom.x) * k;
+      balls[i].y = balls[i].spawnFrom.y + (tg.y - balls[i].spawnFrom.y) * k;
+    }
+    if (spawnT >= 1) {
+      for (var j = 0; j < 2; j++) {
+        var tg2 = spawnTarget(j);
+        balls[j].x = tg2.x;
+        balls[j].y = tg2.y;
+        // 单位向量 * BALL_SPEED，保证合速度正好等于 BALL_SPEED，
+        // 开局第一帧不被 clampSpeed 修正方向
+        var sp = (j === 0 ? 0 : Math.PI) + (Math.random() - 0.5) * 0.6;
+        balls[j].vx = Math.cos(sp) * BALL_SPEED;
+        balls[j].vy = Math.sin(sp) * BALL_SPEED;
+      }
+    }
+    updateDynamites(dt);
+  decayLocks(dt);
+  collideBalls();
+    return;
+  }
+
+  for (var m = 0; m < balls.length; m++) {
+    var b = balls[m];
+    // 钩中目标的位置由钩子逻辑独占控制（锚点坐标即球心），
+    // 这里一旦再叠加 vx/vy，锚体就会相对球心漂出——必须跳过。
+    var hooked = false;
+    for (var _h = 0; _h < hook.length; _h++) {
+      if (hook[_h] && !hook[_h].released && hook[_h].target === m) hooked = true;
+    }
+    if (hooked) continue;
+    b.x += b.vx;
+    b.y += b.vy;
+    var hitWall = false;
+    if (b.x < left)  { b.x = left;  b.vx = Math.abs(b.vx);  hitWall = true; }
+    if (b.x > right) { b.x = right; b.vx = -Math.abs(b.vx); hitWall = true; }
+    if (b.y < top)    { b.y = top;    b.vy = Math.abs(b.vy); hitWall = true; }
+    if (b.y > bottom) { b.y = bottom; b.vy = -Math.abs(b.vy); hitWall = true; }
+    // 吸血鬼：撞墙后随机新方向，表现为"碰墙乱弹"，且不瞬移（用当前位置重算方向）
+    if (hitWall && ROLES[selected[m]].role === 'vampire') {
+      var va = Math.random() * Math.PI * 2;
+      var spd = BALL_SPEED * (0.85 + Math.random() * 0.15);
+      b.vx = Math.cos(va) * spd;
+      b.vy = Math.sin(va) * spd;
+    }
+    clampSpeed(b);
+  }
+
+  updateDynamites(dt);
+  decayLocks(dt);
+  collideBalls();
+
+  for (var n = 0; n < 2; n++) {
+    cd[n] = Math.max(0, cd[n] - dt);
+    if (bumpLock[n] > 0) bumpLock[n] = Math.max(0, bumpLock[n] - dt);
+  }
+  updateTrains(dt);
+  if (finished) return;
+
+  for (var p = 0; p < 2; p++) {
+    var role = ROLES[selected[p]].role;
+    if (role === 'gun') {
+      // 炮手：冷却到 0 就齐射，开火后重置冷却
+      if (cd[p] <= 0) fireGun(p);
+    } else if (role === 'hook') {
+      // 舰长：自身船锚未在作用中且冷却到 0 时，贴近目标就出手
+      var h = hook[p];
+      if ((!h || h.released) && (h ? h.cd : 0) <= 0 && cd[p] <= 0) {
+        var tb2 = balls[1 - p];
+        if (Math.hypot(tb2.x - balls[p].x, tb2.y - balls[p].y) < BALL_R * 9) {
+          if (Math.random() < dt * 1.5) fireHook(p);
+        }
+      }
+    } else if (role === 'shield') {
+      // 盾兵：贴脸时按冷却撞击，平时不主动开技能
+      if (cd[p] <= 0) fireShield(p);
+    } else if (role === 'vampire') {
+      // 吸血鬼：乱弹不追踪。仅在撞墙/碰敌时才重随机（见 collideBalls / 边界反弹），
+      // 不在每帧以概率触发，否则会表现为"中间抽一下瞬移"。
+      clampSpeed(balls[p], BALL_SPEED);
+    } else if (role === 'dynamite') {
+      // 爆破手：冷却到 0 即向随机方向投掷一枚炸药
+      if (cd[p] <= 0) fireDynamite(p);
+    } else if (role === 'dispatcher') {
+      if (cd[p] <= 0) {
+        summonTrains(p);
+        cd[p] = ROLE_DISPATCHER_CD;
+      }
+    } else if (role === 'cowboy') {
+      var cb = balls[p];
+      // 齐射进行中：逐发射出，期间自身持续停止移动
+      if (cb.cowboyIdx != null && cb.cowboyIdx < ROLE_COWBOY_SHOTS) {
+        cb.cowboyNext -= dt;
+        if (cb.cowboyNext <= 0) {
+          var cdx = balls[1 - p].x - cb.x, cdy = balls[1 - p].y - cb.y;
+          var cang = Math.atan2(cdy, cdx); // 每发重新瞄准
+          var cdmg = ROLE_COWBOY_DMG_MIN + Math.floor(Math.random() * (ROLE_COWBOY_DMG_MAX - ROLE_COWBOY_DMG_MIN + 1));
+          bullets.push({
+            x: cb.x + Math.cos(cang) * (BALL_R + 4),
+            y: cb.y + Math.sin(cang) * (BALL_R + 4),
+            vx: Math.cos(cang) * BULLET_SPEED,
+            vy: Math.sin(cang) * BULLET_SPEED,
+            owner: p,
+            color: cb.color,
+            dmg: cdmg,
+            rico: 0,
+            ricoMax: ROLE_COWBOY_RICO
+          });
+          cb.cowboyIdx++;
+          cb.cowboyNext += cb.cowboyPause;
+        }
+        cb.vx = 0; cb.vy = 0;
+        continue;
+      } else if (cb.cowboyIdx != null) {
+        // 6 发全部射完，恢复乱弹
+        cb.cowboyIdx = null; cb.cowboyNext = 0;
+      }
+      // 非齐射期间：持续乱弹，与其他 keep 型角色一致
+      if (cb.cowboyIdx == null) {
+        if (Math.random() < dt * 1.5) {
+          var ra = Math.random() * Math.PI * 2;
+          cb.vx = Math.cos(ra) * BALL_SPEED;
+          cb.vy = Math.sin(ra) * BALL_SPEED;
+        }
+        clampSpeed(cb, BALL_SPEED);
+      }
+      // 冷却到 0：开始一轮齐射
+      if (cd[p] <= 0) {
+        cd[p] = ROLE_COWBOY_CD;
+        cb.cowboyIdx = 0;
+        cb.cowboyNext = 2.5;           // 首发延迟，使齐射中点对齐 10 秒周期
+        cb.cowboyPause = 0.3;          // 每 0.3 秒一发
+        cb.vx = 0; cb.vy = 0;
+      }
+    } else if (role === 'ghost') {
+      // 幽灵：三段式状态机 —— idle(冷却) → warp(虚化无敌) → charge(返还开火)
+      var g = balls[p];
+      var phase = g.ghostPhase || 'idle';
+      var gt = g.ghostT != null ? g.ghostT : 0;
+      gt -= dt;
+      if (phase === 'idle') {
+        // 8 秒冷却结束后进入虚化
+        if (gt <= 0) { phase = 'warp'; gt = ROLE_GHOST_WARP; }
+      } else if (phase === 'warp') {
+        // 虚化期间全程无敌；累计受伤在 ghostDmg 上累加
+        g.invuln = true;
+        if (gt <= 0) {
+          g.ghostDmg = Math.max(0, g.ghostDmg || 0) * ROLE_GHOST_RETURN; // 取 50%
+          phase = 'charge';
+          gt = ROLE_GHOST_CHARGE; // 开火延迟
+        }
+      } else if (phase === 'charge') {
+        var gd = g.ghostDmg || 0; g.ghostDmg = 0;
+        if (gd > 0) {
+          var eg = balls[1 - p];
+          var gdx = eg.x - g.x, gdy = eg.y - g.y;
+          var gang = Math.atan2(gdy, gdx);
+          bullets.push({
+            x: g.x + Math.cos(gang) * (BALL_R + 4),
+            y: g.y + Math.sin(gang) * (BALL_R + 4),
+            vx: Math.cos(gang) * BULLET_SPEED,
+            vy: Math.sin(gang) * BULLET_SPEED,
+            owner: p,
+            color: g.color,
+            dmg: Math.round(gd),
+            rico: 0,
+            ricoMax: ROLE_GHOST_RICO
+          });
+        }
+        phase = 'idle';
+        gt = ROLE_GHOST_CYCLE - ROLE_GHOST_WARP; // 回到 8 秒冷却
+      }
+      g.ghostPhase = phase; g.ghostT = gt;
+      // 非虚化期间持续乱弹
+      if (phase !== 'warp') {
+        if (Math.random() < dt * 1.5) {
+          var gra = Math.random() * Math.PI * 2;
+          g.vx = Math.cos(gra) * BALL_SPEED;
+          g.vy = Math.sin(gra) * BALL_SPEED;
+        }
+        clampSpeed(g, BALL_SPEED);
+      }
+    } else if (role === 'gunner') {
+      // 枪手：每 5 秒朝敌方发射一发可反弹子弹
+      if (cd[p] <= 0) {
+        var enemy = balls[1 - p];
+        var me = balls[p];
+        var gdx = enemy.x - me.x, gdy = enemy.y - me.y;
+        var gl = Math.hypot(gdx, gdy) || 1;
+        var gdmg = ROLE_GUNNER_DMG_MIN + Math.floor(Math.random() * (ROLE_GUNNER_DMG_MAX - ROLE_GUNNER_DMG_MIN + 1));
+        bullets.push({
+          x: me.x + gdx / gl * (BALL_R + 4),
+          y: me.y + gdy / gl * (BALL_R + 4),
+          vx: gdx / gl * BULLET_SPEED,
+          vy: gdy / gl * BULLET_SPEED,
+          owner: p,
+          color: me.color,
+          dmg: gdmg,
+          rico: 0,
+          ricoMax: ROLE_GUNNER_RICO
+        });
+        cd[p] = ROLE_GUNNER_CD;
+      }
+    }
+  }
+
+  // 炮手齐射逐发补发
+  for (var g = 0; g < 2; g++) {
+    var gb = gunBurst[g];
+    if (!gb) continue;
+    if (gb.fired >= gb.total) { gunBurst[g] = null; continue; }
+    gb.cd -= dt;
+    while (gb.cd <= 0 && gb.fired < gb.total) {
+      var ang = gb.ang0 + gb.step * gb.fired;
+      var b2 = balls[g];
+      bullets.push({
+        x: b2.x + Math.cos(ang) * (BALL_R + 4),
+        y: b2.y + Math.sin(ang) * (BALL_R + 4),
+        vx: Math.cos(ang) * BULLET_SPEED,
+        vy: Math.sin(ang) * BULLET_SPEED,
+        owner: g,
+        color: b2.color,
+        dmg: ROLE_GUN_DMG,
+        life: 2.6
+      });
+      gb.fired++;
+      gb.cd += ROLE_GUN_BURST;
+    }
+  }
+
+  for (var q = bullets.length - 1; q >= 0; q--) {
+    var bl = bullets[q];
+    bl.x += bl.vx;
+    bl.y += bl.vy;
+    if (bl.life != null) bl.life -= dt;
+    // 撞墙反弹：反弹次数未耗尽则在场内反弹，耗尽才出界销毁
+    var ricLim = bl.ricoMax != null ? bl.ricoMax : 0;
+    if (bl.rico != null && bl.rico < ricLim) {
+      var bL = ARENA.x + BULLET_R, bR = ARENA.x + ARENA.size - BULLET_R;
+      var bT = ARENA.y + BULLET_R, bB = ARENA.y + ARENA.size - BULLET_R;
+      if (bl.x < bL) { bl.x = bL; bl.vx = Math.abs(bl.vx); bl.rico++; }
+      else if (bl.x > bR) { bl.x = bR; bl.vx = -Math.abs(bl.vx); bl.rico++; }
+      if (bl.y < bT) { bl.y = bT; bl.vy = Math.abs(bl.vy); bl.rico++; }
+      else if (bl.y > bB) { bl.y = bB; bl.vy = -Math.abs(bl.vy); bl.rico++; }
+    }
+    if (bl.rico != null && bl.rico >= ricLim) {
+      // 反弹次数耗尽后按普通子弹处理出界
+      if (bl.x < ARENA.x - BULLET_R || bl.x > ARENA.x + ARENA.size + BULLET_R ||
+          bl.y < ARENA.y - BULLET_R || bl.y > ARENA.y + ARENA.size + BULLET_R) {
+        bullets.splice(q, 1);
+        continue;
+      }
+    }
+    if (bl.life != null && bl.life <= 0) { bullets.splice(q, 1); continue; }
+    var opp = bl.owner === 0 ? 1 : 0;
+    var target = balls[opp];
+    if (Math.hypot(bl.x - target.x, bl.y - target.y) < BALL_R + BULLET_R) {
+      var dmg = bl.dmg != null ? bl.dmg : 12;
+      dealDamage(opp, dmg, bl.color, bl.x, bl.y);
+      target.vx += bl.vx * 0.12;
+      target.vy += bl.vy * 0.12;
+      // 撞墙无限反弹，但打到敌方立即消失
+      bullets.splice(q, 1);
+      continue;
+    }
+  }
+
+  for (var s = particles.length - 1; s >= 0; s--) {
+    var pt = particles[s];
+    pt.x += pt.vx; pt.y += pt.vy;
+    pt.vx *= 0.94; pt.vy *= 0.94;
+    pt.life -= dt * 2.5;
+    if (pt.life <= 0) particles.splice(s, 1);
+  }
+
+  for (var f = floatTexts.length - 1; f >= 0; f--) {
+    var ft = floatTexts[f];
+    ft.y -= dt * 30;
+    ft.life -= dt * 1.4;
+    if (ft.life <= 0) floatTexts.splice(f, 1);
+  }
+
+  // ===== 舰长船锚：钩中后拖拽目标绕自身高速旋转 5 秒，撞边随机 10~20 伤 =====
+  for (var hx = 0; hx < 2; hx++) {
+    var h = hook[hx];
+    if (!h) continue;
+    if (h.released) {
+      h.cd = Math.max(0, h.cd - dt);
+      if (h.cd <= 0) {
+        hook[hx] = null;
+        floatTexts.push({ x: balls[hx].x, y: balls[hx].y - 30, text: '船锚就绪', life: 1, color: balls[hx].color });
+      }
+      continue;
+    }
+    var owner2 = balls[h.owner];
+    var target2 = balls[h.target];
+    h.t += dt;
+    h.ang += h.omega * dt;
+    var cx2 = owner2.x, cy2 = owner2.y;
+    // 先在轨道坐标上算一版，再做撞墙修正；修正后回填轨道角，保证球与锚点始终重合
+    var nx2 = cx2 + Math.cos(h.ang) * h.r;
+    var ny2 = cy2 + Math.sin(h.ang) * h.r;
+    var left2 = ARENA.x + BALL_R, right2 = ARENA.x + ARENA.size - BALL_R;
+    var top2 = ARENA.y + BALL_R, bottom2 = ARENA.y + ARENA.size - BALL_R;
+    var hitEdge = false;
+    if (nx2 < left2) { nx2 = left2; hitEdge = true; }
+    else if (nx2 > right2) { nx2 = right2; hitEdge = true; }
+    if (ny2 < top2) { ny2 = top2; hitEdge = true; }
+    else if (ny2 > bottom2) { ny2 = bottom2; hitEdge = true; }
+    if (hitEdge) hookEdgeHit(h);
+    // 用修正后的坐标反推角：始终让锚点在舰长到该点的射线上，与轨道同相
+    var fixedAng = Math.atan2(ny2 - cy2, nx2 - cx2);
+    h.ang = fixedAng;
+    target2.x = nx2;
+    target2.y = ny2;
+    target2.vx = -Math.sin(fixedAng) * h.omega * h.r;
+    target2.vy = Math.cos(fixedAng) * h.omega * h.r;
+    spawnParticles(target2.x, target2.y, '#fff', 2);
+    if (h.hits >= ROLE_HOOK_HITS) {
+      // 撞满次数立即释放，不再继续折磨，也避免伤害总量失控
+      floatTexts.push({ x: target2.x, y: target2.y - 34, text: '挣脱!', life: 0.9, color: balls[h.owner].color });
+      h.t = ROLE_HOOK_SPIN; // 走下方统一释放逻辑
+    }
+    if (h.t >= ROLE_HOOK_SPIN) {
+      h.released = true;
+      h.cd = ROLE_HOOK_COOLDOWN;
+      // 释放时给目标一个确定的反弹初速，彻底清除环绕残留，避免不动或飞出场外
+      var escapeAng = Math.atan2(target2.y - owner2.y, target2.x - owner2.x);
+      target2.vx = Math.cos(escapeAng) * BALL_SPEED * 0.8;
+      target2.vy = Math.sin(escapeAng) * BALL_SPEED * 0.8;
+      clampSpeed(target2);
+      floatTexts.push({ x: owner2.x, y: owner2.y - 30, text: '释放！冷却 ' + ROLE_HOOK_COOLDOWN + 's', life: 1.4, color: owner2.color });
+      // 释放后若目标已无血，补判胜负
+      if (hp[h.target] <= 0 && !finished) endMatch();
+    }
+  }
+}
+
+function collideBalls() {
+  var a = balls[0], b = balls[1];
+  var dx = b.x - a.x;
+  var dy = b.y - a.y;
+  var d = Math.hypot(dx, dy);
+  if (d === 0 || d > BALL_R * 2) return;
+  var overlap = (BALL_R * 2 - d) / 2;
+  var nx = dx / d, ny = dy / d;
+  a.x -= nx * overlap; a.y -= ny * overlap;
+  b.x += nx * overlap; b.y += ny * overlap;
+  var dvx = b.vx - a.vx;
+  var dvy = b.vy - a.vy;
+  var sep = dvx * nx + dvy * ny;
+  if (sep > 0) return;
+  a.vx += sep * nx; a.vy += sep * ny;
+  b.vx -= sep * nx; b.vy -= sep * ny;
+  clampSpeed(a);
+  clampSpeed(b);
+  spawnParticles(a.x + nx * BALL_R, a.y + ny * BALL_R, a.color, 6);
+  spawnParticles(b.x - nx * BALL_R, b.y - ny * BALL_R, b.color, 6);
+
+  // 盾兵贴脸伤害：本体接触即造成 10 伤，每帧只结算一次避免连续暴击
+  for (var ci = 0; ci < 2; ci++) {
+    if (ROLES[selected[ci]].role !== 'shield') continue;
+    if (bumpLock[ci] > 0) continue;
+    var opp = 1 - ci;
+    if (ROLES[selected[opp]].role === 'shield' && bumpLock[opp] > 0) continue;
+    dealDamage(opp, ROLE_SHIELD_BUMP, balls[ci].color, balls[ci].x, balls[ci].y);
+    bumpLock[ci] = 0.4;
+  }
+
+  // 吸血鬼：贴身 6~16 伤，并回复自身等量生命
+  for (var vi = 0; vi < 2; vi++) {
+    if (ROLES[selected[vi]].role !== 'vampire') continue;
+    if (bumpLock[vi] > 0) continue;
+    var vampOpp = 1 - vi;
+    if (bumpLock[vampOpp] > 0) continue;
+    var dmgV = ROLE_VAMPIRE_DMG_MIN + Math.floor(Math.random() * (ROLE_VAMPIRE_DMG_MAX - ROLE_VAMPIRE_DMG_MIN + 1));
+    dealDamage(vampOpp, dmgV, balls[vi].color, balls[vi].x, balls[vi].y);
+    // 吸血回复（不超过自身上限）
+    var maxHpV = ROLES[selected[vi]].maxHp;
+    hp[vi] = Math.min(maxHpV, hp[vi] + dmgV);
+    floatTexts.push({ x: balls[vi].x, y: balls[vi].y - 22, text: '+' + dmgV, life: 1, color: '#ff2d6f' });
+    spawnParticles(balls[vi].x, balls[vi].y, '#ff2d6f', 12);
+    bumpLock[vi] = ROLE_VAMPIRE_LOCK;
+    // 吸血后随机新方向，避免继续贴着反复咬（"碰敌也弹"）
+    var va = Math.random() * Math.PI * 2;
+    var spd = BALL_SPEED * (0.85 + Math.random() * 0.15);
+    balls[vi].vx = Math.cos(va) * spd;
+    balls[vi].vy = Math.sin(va) * spd;
+  }
+}
+
+/* ============ 绘制 ============ */
+function drawBackground() {
+  ctx.fillStyle = '#0b1020';
+  ctx.fillRect(0, 0, W, H);
+  var cx = ARENA.x + ARENA.size / 2;
+  var cy = ARENA.y + ARENA.size / 2;
+  var g = ctx.createRadialGradient(cx, cy, 50, cx, cy, ARENA.size * 0.7);
+  g.addColorStop(0, 'rgba(79,195,255,.06)');
+  g.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(ARENA.x, ARENA.y, ARENA.size, ARENA.size);
+  ctx.strokeStyle = 'rgba(255,255,255,.045)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (var x = ARENA.x; x <= ARENA.x + ARENA.size; x += 40) {
+    ctx.moveTo(x, ARENA.y); ctx.lineTo(x, ARENA.y + ARENA.size);
+  }
+  for (var y = ARENA.y; y <= ARENA.y + ARENA.size; y += 40) {
+    ctx.moveTo(ARENA.x, y); ctx.lineTo(ARENA.x + ARENA.size, y);
+  }
+  ctx.stroke();
+  ctx.strokeStyle = 'rgba(255,255,255,.08)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(cx, ARENA.y + 10); ctx.lineTo(cx, ARENA.y + ARENA.size - 10);
+  ctx.moveTo(ARENA.x + 10, cy); ctx.lineTo(ARENA.x + ARENA.size - 10, cy);
+  ctx.stroke();
+  ctx.strokeStyle = 'rgba(255,255,255,.12)';
+  ctx.beginPath();
+  ctx.arc(cx, cy, 30, 0, Math.PI * 2);
+  ctx.stroke();
+}
+
+function drawArena() {
+  ctx.lineJoin = 'round';
+  ctx.shadowColor = 'rgba(79,195,255,.5)';
+  ctx.shadowBlur = 18;
+  ctx.strokeStyle = 'rgba(120,180,255,.9)';
+  ctx.lineWidth = ARENA.thickness;
+  ctx.strokeRect(ARENA.x, ARENA.y, ARENA.size, ARENA.size);
+  ctx.shadowBlur = 0;
+}
+
+function drawBall(b) {
+  // 两球同色时仍要能分清：蓝方球带白色描边，粉方球带队徽标记
+  var isBlue = (b === balls[0]);
+  ctx.beginPath();
+  ctx.arc(b.x, b.y, BALL_R + 8, 0, Math.PI * 2);
+  var g = ctx.createRadialGradient(b.x, b.y, BALL_R, b.x, b.y, BALL_R + 8);
+  g.addColorStop(0, b.glow);
+  g.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = g;
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(b.x, b.y, BALL_R, 0, Math.PI * 2);
+  var lg = ctx.createLinearGradient(b.x - BALL_R, b.y - BALL_R, b.x + BALL_R, b.y + BALL_R);
+  lg.addColorStop(0, '#ffffff');
+  lg.addColorStop(0.35, b.color);
+  lg.addColorStop(1, shade(b.color, -0.35));
+  ctx.fillStyle = lg;
+  ctx.fill();
+  ctx.lineWidth = 2.5;
+  ctx.strokeStyle = isBlue ? 'rgba(255,255,255,.9)' : 'rgba(0,0,0,.35)';
+  ctx.stroke();
+  // 队徽：蓝方为三角，粉方为菱形，一眼区分
+  ctx.beginPath();
+  if (isBlue) {
+    ctx.moveTo(b.x, b.y - 6);
+    ctx.lineTo(b.x - 5.5, b.y + 3.5);
+    ctx.lineTo(b.x + 5.5, b.y + 3.5);
+  } else {
+    ctx.moveTo(b.x, b.y - 6);
+    ctx.lineTo(b.x + 6, b.y);
+    ctx.lineTo(b.x, b.y + 6);
+    ctx.lineTo(b.x - 6, b.y);
+  }
+  ctx.closePath();
+  ctx.fillStyle = 'rgba(255,255,255,.92)';
+  ctx.fill();
+}
+
+
+function drawDynamites() {
+  for (var i = 0; i < dynamites.length; i++) {
+    var d = dynamites[i];
+    var t = 1 - d.fuse / d.fuseMax;   // 0 → 1，引信越短越亮
+    // 引信火花
+    ctx.beginPath();
+    ctx.arc(d.x, d.y - d.r - 4, 2.4, 0, Math.PI * 2);
+    ctx.fillStyle = '#fff3c4';
+    ctx.shadowColor = '#ffb347';
+    ctx.shadowBlur = 10;
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    // 药体
+    ctx.beginPath();
+    ctx.arc(d.x, d.y, d.r, 0, Math.PI * 2);
+    var grd = ctx.createRadialGradient(d.x - 3, d.y - 3, 1, d.x, d.y, d.r);
+    grd.addColorStop(0, '#ffd28a');
+    grd.addColorStop(1, '#c1440a');
+    ctx.fillStyle = grd;
+    ctx.fill();
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = '#7a2c06';
+    ctx.stroke();
+    // 倒计时环（引信进度）
+    ctx.beginPath();
+    ctx.arc(d.x, d.y, d.r + 4, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * t);
+    ctx.strokeStyle = t > 0.66 ? '#ff4d2e' : '#ffb347';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }
+}
+
+function drawTrains() {
+  if (!trains.length) return;
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(ARENA.x, ARENA.y, ARENA.size, ARENA.size);
+  ctx.clip();
+
+  for (var i = 0; i < trains.length; i++) {
+    var train = trains[i];
+    var color = ROLES[selected[train.owner]].color;
+    ctx.save();
+    ctx.translate(train.x, train.y);
+    if (train.axis === 'vertical') ctx.rotate(Math.PI / 2);
+
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 12;
+    ctx.fillStyle = '#20283b';
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.roundRect(-train.length / 2, -train.width / 2, train.length, train.width, 7);
+    ctx.fill();
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    ctx.fillStyle = color;
+    ctx.fillRect(-train.length / 2 + 8, -train.width / 2 + 6, 20, train.width - 12);
+    ctx.fillRect(train.length / 2 - 28, -train.width / 2 + 6, 20, train.width - 12);
+    ctx.fillStyle = 'rgba(255,255,255,.85)';
+    for (var windowX = -train.length / 2 + 38;
+         windowX < train.length / 2 - 34;
+         windowX += 32) {
+      ctx.fillRect(windowX, -train.width / 2 + 6, 22, train.width - 12);
+    }
+
+    ctx.fillStyle = '#161b29';
+    for (var wheel = -2; wheel <= 2; wheel++) {
+      ctx.beginPath();
+      ctx.arc(wheel * 34, train.width / 2 - 1, 3.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+  ctx.restore();
+}
+
+function drawBullets() {
+  for (var i = 0; i < bullets.length; i++) {
+    var bl = bullets[i];
+    ctx.beginPath();
+    ctx.arc(bl.x, bl.y, BULLET_R + 5, 0, Math.PI * 2);
+    var g = ctx.createRadialGradient(bl.x, bl.y, 1, bl.x, bl.y, BULLET_R + 5);
+    g.addColorStop(0, bl.color);
+    g.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = g;
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(bl.x, bl.y, BULLET_R, 0, Math.PI * 2);
+    ctx.fillStyle = '#fff';
+    ctx.fill();
+  }
+}
+
+function drawParticles() {
+  for (var i = 0; i < particles.length; i++) {
+    var p = particles[i];
+    ctx.globalAlpha = Math.max(0, p.life);
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 2.5 * p.life + 0.5, 0, Math.PI * 2);
+    ctx.fillStyle = p.color;
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawFloatTexts() {
+  ctx.textAlign = 'center';
+  ctx.font = 'bold 18px sans-serif';
+  for (var i = 0; i < floatTexts.length; i++) {
+    var f = floatTexts[i];
+    ctx.globalAlpha = Math.max(0, Math.min(1, f.life));
+    ctx.fillStyle = f.color;
+    ctx.fillText(f.text, f.x, f.y);
+  }
+  ctx.globalAlpha = 1;
+}
+
+// 舰长同款技能可视化：球顶双环
+// 外环 = 冷却 / 技能持续时长（灰底 + 主色填充，满环=刚释放）
+// 内环 = 当前效果剩余时长（彩色高亮，带脉冲发光）
+function drawSkillRing(b) {
+  var p = balls.indexOf(b);
+  if (p < 0) return;
+  var role = ROLES[selected[p]].role;
+  var cx = b.x, cy = b.y - BALL_R - 16;
+  var coolFrac = 0, coolMax = 0, coolColor = '#4fc3ff', coolLabel = '';
+  var actFrac = 0, actMax = 0, actColor = '#ffd54a', actLabel = '', actGlow = false;
+
+  if (role === 'hook') {
+    var h = hook[p];
+    if (h && !h.released) {
+      coolFrac = h.t / ROLE_HOOK_SPIN; coolMax = ROLE_HOOK_SPIN;
+      coolColor = '#1f9ea8'; coolLabel = h.t.toFixed(1) + 's';
+    } else if (h && h.released && h.cd > 0) {
+      coolFrac = h.cd / ROLE_HOOK_COOLDOWN; coolMax = ROLE_HOOK_COOLDOWN;
+      coolColor = '#ff8a65'; coolLabel = h.cd.toFixed(1) + 's';
+    }
+  } else if (role === 'gun') {
+    if (cd[p] > 0) {
+      coolFrac = cd[p] / ROLE_GUN_CD; coolMax = ROLE_GUN_CD;
+      coolColor = '#ffb74d'; coolLabel = cd[p].toFixed(1) + 's';
+    }
+  } else if (role === 'shield') {
+    if (cd[p] > 0) {
+      coolFrac = cd[p] / ROLE_SHIELD_CD; coolMax = ROLE_SHIELD_CD;
+      coolColor = '#ba68c8'; coolLabel = cd[p].toFixed(1) + 's';
+    }
+  } else if (role === 'dispatcher') {
+    if (cd[p] > 0) {
+      coolFrac = cd[p] / ROLE_DISPATCHER_CD; coolMax = ROLE_DISPATCHER_CD;
+      coolColor = '#ffd166'; coolLabel = cd[p].toFixed(1) + 's';
+    }
+  } else if (role === 'dynamite') {
+    if (cd[p] > 0) {
+      coolMax = ROLES[selected[p]].cd || 10; coolFrac = cd[p] / coolMax;
+      coolColor = '#ff7043'; coolLabel = cd[p].toFixed(1) + 's';
+    }
+  } else if (role === 'cowboy') {
+    if (b.cowboyIdx != null && b.cowboyIdx < ROLE_COWBOY_SHOTS) {
+      actMax = ROLE_COWBOY_PAUSE; actFrac = 1 - Math.max(0, b.cowboyNext) / actMax;
+      actColor = '#ff7043'; actLabel = (b.cowboyIdx + 1) + '/' + ROLE_COWBOY_SHOTS; actGlow = true;
+    }
+    if (cd[p] > 0) {
+      coolFrac = cd[p] / ROLE_COWBOY_CD; coolMax = ROLE_COWBOY_CD;
+      coolColor = '#ff7043'; coolLabel = cd[p].toFixed(1) + 's';
+    }
+  } else if (role === 'gunner') {
+    if (cd[p] > 0) {
+      coolFrac = cd[p] / ROLE_GUNNER_CD; coolMax = ROLE_GUNNER_CD;
+      coolColor = '#4fc3ff'; coolLabel = cd[p].toFixed(1) + 's';
+    }
+  } else if (role === 'ghost') {
+    var gp = b.ghostPhase || 'idle', gt = b.ghostT || 0;
+    if (gp === 'warp') {
+      actMax = ROLE_GHOST_WARP; actFrac = gt / actMax;
+      actColor = '#b388ff'; actLabel = gt.toFixed(1) + 's'; actGlow = true;
+    } else if (gp === 'charge') {
+      actMax = ROLE_GHOST_CHARGE; actFrac = 1 - gt / actMax;
+      actColor = '#ff5252'; actLabel = '返还!'; actGlow = true;
+    }
+    if (gp === 'idle' && gt > 0) {
+      coolMax = ROLE_GHOST_CYCLE - ROLE_GHOST_WARP; coolFrac = gt / coolMax;
+      coolColor = '#b388ff'; coolLabel = '就绪 ' + gt.toFixed(1) + 's';
+    }
+  }
+  if (!coolMax && !actMax) return;
+
+  var R1 = 9, R2 = 6, lw1 = 2.6, lw2 = 2.4, start = -Math.PI / 2;
+
+  if (coolMax) {
+    ctx.beginPath();
+    ctx.arc(cx, cy, R1, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(255,255,255,.12)';
+    ctx.lineWidth = lw1;
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(cx, cy, R1, start, start + Math.PI * 2 * Math.min(1, Math.max(0, coolFrac)));
+    ctx.strokeStyle = coolColor;
+    ctx.lineWidth = lw1;
+    ctx.lineCap = 'round';
+    ctx.stroke();
+    ctx.lineCap = 'butt';
+  }
+  if (actMax) {
+    if (actGlow) {
+      ctx.beginPath();
+      ctx.arc(cx, cy, R2 - 3, 0, Math.PI * 2);
+      ctx.fillStyle = actColor;
+      ctx.globalAlpha = 0.35 + 0.35 * Math.sin(globalTime * 6);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+    ctx.beginPath();
+    ctx.arc(cx, cy, R2, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(255,255,255,.12)';
+    ctx.lineWidth = lw2;
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(cx, cy, R2, start, start + Math.PI * 2 * Math.min(1, Math.max(0, actFrac)));
+    ctx.strokeStyle = actColor;
+    ctx.lineWidth = lw2;
+    ctx.lineCap = 'round';
+    ctx.stroke();
+    ctx.lineCap = 'butt';
+  }
+  if (coolLabel || actLabel) {
+    ctx.font = 'bold 9px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = actLabel ? actColor : coolColor;
+    ctx.fillText(actLabel || coolLabel, cx, cy + 3.2);
+    ctx.textAlign = 'left';
+  }
+}
+
+// 血量条下的技能文字标签：复刻 drawHUD 中 drawBar 的样式
+function drawSkillLabel(b, x, y, main, sub) {
+  if (main == null || main === '') return;
+  ctx.save();
+  ctx.font = 'bold 12px sans-serif';
+  var w = ctx.measureText(String(main)).width + 12;
+  ctx.textAlign = 'center';
+  ctx.fillStyle = 'rgba(13,16,24,.75)';
+  ctx.beginPath();
+  ctx.rect(x - w / 2 - 4, y - 12, w + 8, 16);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,.2)';
+  ctx.stroke();
+  ctx.fillStyle = '#fff';
+  ctx.fillText(main, x, y - 1);
+  if (sub) {
+    ctx.font = '9px sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillStyle = 'rgba(255,255,255,.65)';
+    ctx.fillText(sub, x + w / 2 + 6, y - 1);
+  }
+  ctx.restore();
+}
+
+// 根据角色与技能状态生成标签文字
+function getSkillLabel(b) {
+  var p = balls.indexOf(b);
+  if (p < 0) return null;
+  var role = ROLES[selected[p]].role, main = null, sub = null;
+  if (role === 'hook') {
+    var h = hook[p];
+    if (h && !h.released) { main = h.t.toFixed(1) + 's'; sub = '船锚'; }
+    else if (h && h.released && h.cd > 0) { main = h.cd.toFixed(1) + 's'; sub = '船锚冷却'; }
+  } else if (role === 'gun') {
+    if (cd[p] > 0) { main = cd[p].toFixed(1) + 's'; sub = '点射'; }
+    else { main = '就绪'; sub = '点射'; }
+  } else if (role === 'gunner') {
+    if (cd[p] > 0) { main = cd[p].toFixed(1) + 's'; sub = '点射'; }
+    else { main = '就绪'; sub = '点射'; }
+  } else if (role === 'shield') {
+    if (cd[p] > 0) { main = cd[p].toFixed(1) + 's'; sub = '护盾'; }
+    else { main = '就绪'; sub = '护盾'; }
+  } else if (role === 'dispatcher') {
+    if (cd[p] > 0) { main = cd[p].toFixed(1) + 's'; sub = '列车调度'; }
+    else { main = '就绪'; sub = '列车调度'; }
+  } else if (role === 'dynamite') {
+    if (cd[p] > 0) { main = cd[p].toFixed(1) + 's'; sub = '炸弹'; }
+    else { main = '就绪'; sub = '炸弹'; }
+  } else if (role === 'cowboy') {
+    if (cd[p] > 0) { main = cd[p].toFixed(1) + 's'; sub = '齐射'; }
+    else { main = '就绪'; sub = '齐射'; }
+  } else if (role === 'cannon') {
+    if (cd[p] > 0) { main = cd[p].toFixed(1) + 's'; sub = '蓄力'; }
+    else { main = '就绪'; sub = '蓄力'; }
+  } else if (role === 'ghost') {
+    var gp = b.ghostPhase || 'idle', gt = b.ghostT || 0;
+    if (gp === 'warp') { main = gt.toFixed(1) + 's'; sub = '虚化无敌'; }
+    else if (gp === 'charge') { main = '返还!'; sub = '虚化'; }
+    else { main = gt > 0 ? '就绪 ' + gt.toFixed(1) + 's' : '就绪'; sub = '虚化'; }
+  }
+  if (main) return { main: main, sub: sub };
+  return null;
+}
+
+function render() {
+  drawBackground();
+  drawArena();
+  drawTrains();
+  drawHooks();       // 先画钩索，压在球下面
+  for (var i = 0; i < balls.length; i++) drawBall(balls[i]);
+  drawDynamites();
+  drawBullets();
+  for (var i = 0; i < balls.length; i++) drawSkillRing(balls[i]);
+  drawParticles();
+  drawFloatTexts();
+}
+
+// 舰长船锚与钩索
+// 船锚锚体：主环+外发光+四根辐条+方向箭头
+// 可在舰长常驻轨道与钩中锚体两处共用，color 决定主环颜色
+function drawAnchor(color) {
+  var R = 13;
+  // 外发光
+  ctx.beginPath();
+  ctx.arc(0, 0, R + 6, 0, Math.PI * 2);
+  ctx.strokeStyle = 'rgba(31,158,168,.35)';
+  ctx.lineWidth = 4;
+  ctx.stroke();
+  // 锚体主环
+  ctx.beginPath();
+  ctx.arc(0, 0, R, 0, Math.PI * 2);
+  ctx.strokeStyle = color || '#1f9ea8';
+  ctx.lineWidth = 3.5;
+  ctx.stroke();
+  // 十字锚臂
+  ctx.beginPath();
+  ctx.moveTo(-R, 0); ctx.lineTo(R, 0);
+  ctx.moveTo(0, -R); ctx.lineTo(0, R);
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = 2.5;
+  ctx.stroke();
+  // 锚尖小三角（指向旋转方向）
+  ctx.beginPath();
+  ctx.moveTo(R + 2, -3);
+  ctx.lineTo(R + 9, 0);
+  ctx.lineTo(R + 2, 3);
+  ctx.closePath();
+  ctx.fillStyle = '#ffd54a';
+  ctx.fill();
+}
+
+function drawHooks() {
+  // 只绘制钩中期间的钩索与锚体：锚体圆心 = target.x/y，
+  // 即物理侧钩中逻辑每帧写回的坐标（撞墙修正后反推角），渲染与真实位置天然一致。
+  for (var i = 0; i < 2; i++) {
+    var h = hook[i];
+    if (!h) continue;
+    var owner = balls[h.owner];
+    var target = balls[h.target];
+    // 冷却期间：不画钩索与锚体，改为在舰长头顶显示冷却倒计时
+    if (h.released) {
+      ctx.beginPath();
+      ctx.arc(owner.x, owner.y, 5, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(255,213,74,.6)';
+      ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,.75)';
+      ctx.font = 'bold 11px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('冷却 ' + h.cd.toFixed(1) + 's', owner.x, owner.y - BALL_R - 14);
+      ctx.textAlign = 'left';
+      continue;
+    }
+    // 钩索
+    ctx.beginPath();
+    ctx.moveTo(owner.x, owner.y);
+    ctx.lineTo(target.x, target.y);
+    ctx.strokeStyle = h.released ? 'rgba(31,158,168,.25)' : 'rgba(255,255,255,.55)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 6]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    // 物理侧已保证 target 与锚点同坐标（撞墙修正后反推角），此处直接读 target
+    // 画法：所有坐标写成相对于 target 的偏移量，不使用 translate/rotate，
+    // 避免 translate 累积污染后续 drawBall 的坐标系
+    var cx0 = target.x, cy0 = target.y;
+    var co = Math.cos(h.ang * 6), si = Math.sin(h.ang * 6);
+    // 外发光
+    ctx.beginPath();
+    ctx.arc(cx0, cy0, BALL_R + 13, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(31,158,168,.35)';
+    ctx.lineWidth = 5;
+    ctx.stroke();
+    // 锚体主环
+    ctx.beginPath();
+    ctx.arc(cx0, cy0, BALL_R + 8, 0, Math.PI * 2);
+    ctx.strokeStyle = '#1f9ea8';
+    ctx.lineWidth = 3.5;
+    ctx.stroke();
+    // 四根高亮辐条：相对坐标乘旋转矩阵
+    for (var k = 0; k < 4; k++) {
+      var a = k * Math.PI / 2;
+      var lx1 = Math.cos(a) * (BALL_R + 2), ly1 = Math.sin(a) * (BALL_R + 2);
+      var lx2 = Math.cos(a) * (BALL_R + 12), ly2 = Math.sin(a) * (BALL_R + 12);
+      var rx1 = lx1 * co - ly1 * si, ry1 = lx1 * si + ly1 * co;
+      var rx2 = lx2 * co - ly2 * si, ry2 = lx2 * si + ly2 * co;
+      ctx.beginPath();
+      ctx.moveTo(cx0 + rx1, cy0 + ry1);
+      ctx.lineTo(cx0 + rx2, cy0 + ry2);
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+    }
+    // 方向箭头：指向当前旋转方向
+    var arrowAng = (h.omega > 0 ? 1 : -1) * Math.PI / 2;
+    var ax1 = Math.cos(arrowAng) * (BALL_R + 9), ay1 = Math.sin(arrowAng) * (BALL_R + 9);
+    var ax2 = Math.cos(arrowAng) * (BALL_R + 20), ay2 = Math.sin(arrowAng) * (BALL_R + 20);
+    var arx1 = ax1 * co - ay1 * si, ary1 = ax1 * si + ay1 * co;
+    var arx2 = ax2 * co - ay2 * si, ary2 = ax2 * si + ay2 * co;
+    ctx.beginPath();
+    ctx.moveTo(cx0 + arx1, cy0 + ary1);
+    ctx.lineTo(cx0 + arx2, cy0 + ary2);
+    ctx.strokeStyle = '#ffd54a';
+    ctx.lineWidth = 3;
+    ctx.stroke();
+
+    // 被钉住的锚点：球身外围的青色环（target 即锚点坐标）
+    ctx.beginPath();
+    ctx.arc(cx0, cy0, BALL_R + 4, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(31,158,168,.85)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // 被钩住方头顶状态
+    ctx.font = 'bold 11px sans-serif';
+    ctx.textAlign = 'center';
+    var dirSign = h.omega > 0 ? '→' : '←';
+    ctx.fillStyle = '#ff5b6e';
+    ctx.fillText('被钩住 ' + dirSign, target.x, target.y - BALL_R - 14);
+    ctx.textAlign = 'left';
+  }
+}
+
+/* ============ 主循环 ============ */
+function loop(ts) {
+  if (!running) return;
+  if (!lastTime) lastTime = ts;
+  var dt = Math.min(0.05, (ts - lastTime) / 1000);
+  lastTime = ts;
+  globalTime += dt;
+  update(dt);
+  updateHUD();
+  render();
+  rafId = requestAnimationFrame(loop);
+}
+
+/* ============ HUD ============ */
+function updateHUD() {
+  var max0 = ROLES[selected[0]].maxHp, max1 = ROLES[selected[1]].maxHp;
+  document.getElementById('hp0').style.width = Math.max(0, hp[0] / max0 * 100) + '%';
+  document.getElementById('hp1').style.width = Math.max(0, hp[1] / max1 * 100) + '%';
+  document.getElementById('hpNum0').textContent = Math.ceil(hp[0]) + ' / ' + max0;
+  document.getElementById('hpNum1').textContent = Math.ceil(hp[1]) + ' / ' + max1;
+  document.getElementById('hpNum0').style.color = hp[0] <= max0 * 0.3 ? '#ff6b6b' : '#c7cee0';
+  document.getElementById('hpNum1').style.color = hp[1] <= max1 * 0.3 ? '#ff6b6b' : '#c7cee0';
+  // 技能名与冷却
+  var r0 = ROLES[selected[0]], r1 = ROLES[selected[1]];
+  var s0 = document.getElementById('skill0'), s1 = document.getElementById('skill1');
+  if (s0) s0.textContent = r0.skillName + (skillStateText(0, r0) ? ' · ' + skillStateText(0, r0) : '');
+  if (s1) s1.textContent = r1.skillName + (skillStateText(1, r1) ? ' · ' + skillStateText(1, r1) : '');
+}
+
+// HP 进度条下方：各角色技能剩余时间文字
+function skillStateText(p, r) {
+  var role = r.role;
+  if (role === 'hook') {
+    if (hook[p] && !hook[p].released) return '钩中 ' + Math.max(0, ROLE_HOOK_SPIN - hook[p].t).toFixed(1) + 's';
+    if (hook[p] && hook[p].released && hook[p].cd > 0) return '船锚冷却 ' + hook[p].cd.toFixed(1) + 's';
+  } else if (role === 'gun') {
+    if (cd[p] > 0) return '冷却 ' + cd[p].toFixed(1) + 's';
+  } else if (role === 'gunner') {
+    if (cd[p] > 0) return '冷却 ' + cd[p].toFixed(1) + 's';
+  } else if (role === 'shield') {
+    if (cd[p] > 0) return '冷却 ' + cd[p].toFixed(1) + 's';
+  } else if (role === 'dispatcher') {
+    if (cd[p] > 0) return '列车冷却 ' + cd[p].toFixed(1) + 's';
+  } else if (role === 'dynamite') {
+    if (cd[p] > 0) return '炸药冷却 ' + cd[p].toFixed(1) + 's';
+  } else if (role === 'cowboy') {
+    if (balls[p] && balls[p].cowboyIdx != null && balls[p].cowboyIdx < ROLE_COWBOY_SHOTS)
+      return '齐射 ' + (balls[p].cowboyIdx + 1) + '/' + ROLE_COWBOY_SHOTS;
+    if (cd[p] > 0) return '齐射冷却 ' + cd[p].toFixed(1) + 's';
+  } else if (role === 'cannon') {
+    if (cd[p] > 0) return '蓄力冷却 ' + cd[p].toFixed(1) + 's';
+  } else if (role === 'vampire') {
+    return 'HP ' + Math.ceil(hp[p]) + '/' + r.maxHp + ' · 吸血中';
+  } else if (role === 'ghost') {
+    var gp = balls[p] && balls[p].ghostPhase, gt = balls[p] ? balls[p].ghostT || 0 : 0;
+    if (gp === 'warp') return '虚化无敌 ' + gt.toFixed(1) + 's';
+    if (gp === 'charge') return '返还中';
+    if (gt > 0) return '就绪 ' + gt.toFixed(1) + 's';
+  }
+  return '';
+}
+
+function flashHUD(side) {
+  var el = document.querySelectorAll('.player')[side];
+  el.classList.remove('flash');
+  void el.offsetWidth;
+  el.classList.add('flash');
+}
+
+/* ============ 面板控制 ============ */
+var overlay = document.getElementById('overlay');
+var ctrlBar = document.getElementById('ctrlBar');
+var ctrlBtn = document.getElementById('ctrlBtn');
+
+function hideRolePanels(hide) {
+  var el = document.getElementById('rolePanels');
+  if (!el) return;
+  el.classList.toggle('hide', hide);
+}
+
+function syncCtrlBtn() {
+  if (running) {
+    ctrlBtn.textContent = '终止对局';
+    ctrlBtn.className = 'stop';
+  } else {
+    ctrlBtn.textContent = '开始';
+    ctrlBtn.className = 'start';
+  }
+}
+
+/* ============ 开始 / 终止 / 结束 ============ */
+function startMatch() {
+  resetMatch();
+  overlay.classList.add('hidden');
+  hideRolePanels(true);
+  ctrlBar.classList.remove('hidden');
+  running = true;
+  finished = false;
+  lastTime = 0;
+  syncCtrlBtn();
+  if (rafId) cancelAnimationFrame(rafId);
+  rafId = requestAnimationFrame(loop);
+}
+
+function terminateMatch() {
+  running = false;
+  finished = false;
+  if (rafId) cancelAnimationFrame(rafId);
+  rafId = null;
+  balls[0] = mkBall(0);
+  balls[1] = mkBall(1);
+  previewX0 = spawnTarget(0).x; previewY0 = spawnTarget(0).y;
+  previewX1 = spawnTarget(1).x; previewY1 = spawnTarget(1).y;
+  balls[0].x = previewX0; balls[0].y = previewY0; balls[0].vx = 0; balls[0].vy = 0;
+  balls[1].x = previewX1; balls[1].y = previewY1; balls[1].vx = 0; balls[1].vy = 0;
+  hp = [ ROLES[selected[0]].maxHp, ROLES[selected[1]].maxHp ];
+  cd = [0, 0];
+  hook = [ null, null ];
+  dynamites = [];
+  gunBurst = [ null, null ];
+  bumpLock = [ 0, 0 ];
+  bullets = [];
+  particles = [];
+  floatTexts = [];
+  spawnT = 0;
+  trains = [];
+  updateHUD();
+  render();
+  hideRolePanels(false);
+  syncCtrlBtn();
+}
+
+function toggleMatch() {
+  if (toggleMatch.busy) return;
+  toggleMatch.busy = true;
+  if (running) terminateMatch();
+  else startMatch();
+  setTimeout(function () { toggleMatch.busy = false; }, 120);
+}
+
+function endMatch() {
+  running = false;
+  if (rafId) cancelAnimationFrame(rafId);
+  trains = [];
+  finished = true;
+  syncCtrlBtn();
+  var winner =
+    hp[0] > hp[1] ? ROLES[selected[0]].name + ' 获胜！' :
+    hp[1] > hp[0] ? ROLES[selected[1]].name + ' 获胜！' : '平局！';
+  overlay.querySelector('.ov-title').textContent = winner;
+  overlay.querySelector('.ov-sub').textContent =
+    ROLES[selected[0]].name + ' 剩余 ' + Math.ceil(hp[0]) + ' · ' + ROLES[selected[1]].name + ' 剩余 ' + Math.ceil(hp[1]);
+  document.getElementById('sideConfirmBtn').textContent = '再来一局';
+  hideRolePanels(false);
+  overlay.classList.remove('hidden');
+  syncCtrlBtn();
+  ctrlBar.classList.remove('hidden');
+  render();
+}
+
+ctrlBtn.addEventListener('click', toggleMatch);
+
+/* ============ 延时 5 秒开始 ============ */
+var delayBtn = document.getElementById('delayBtn');
+var delayTimer = null;
+delayBtn.addEventListener('click', function () {
+  if (delayTimer || running) return;          // 已在倒计时 / 对局进行中，忽略
+  var n = 5;
+  delayBtn.textContent = '准备中 ' + n;
+  delayBtn.disabled = true;
+  delayTimer = setInterval(function () {
+    n--;
+    if (n <= 0) {
+      clearInterval(delayTimer);
+      delayTimer = null;
+      delayBtn.textContent = '延时 5 秒开始';
+      delayBtn.disabled = false;
+      startMatch();                            // 到点开赛
+    } else {
+      delayBtn.textContent = '准备中 ' + n;
+    }
+  }, 1000);
+});
+document.getElementById('sideConfirmBtn').addEventListener('click', function () {
+  overlay.classList.add('hidden');
+  terminateMatch();
+});
+
+/* ============ 启动：先渲染一次，再用 setInterval 持续驱动 ============ */
+buildRoleList(0);
+buildRoleList(1);
+syncTopNames();
+resetMatch();
+syncRolePickButtons();
+syncCtrlBtn();
+ctrlBar.classList.remove('hidden');
+render();
+
+setInterval(function () {
+  try {
+    globalTime += 1 / 60;
+    update(1 / 60);
+    render();
+  } catch (e) {
+    /* 静默吞错，避免循环自爆 */
+  }
+}, 16);
+</script>
+</body>
+</html>

@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>小球竞技场更新日志</title>
+<style>
+  :root{color-scheme:light;--bg:#f2f5fa;--card:#fff;--text:#1c2738;--sub:#68778d;--blue:#1769e0;--line:#e3e9f2}
+  *{box-sizing:border-box}
+  body{margin:0;padding:28px 16px 48px;font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text)}
+  main{max-width:880px;margin:0 auto}
+  header{padding:26px 28px;border-radius:18px;background:linear-gradient(140deg,#4c63ff,#2747c6);color:#fff;box-shadow:0 8px 24px #2848a11f}
+  h1{margin:0;font-size:25px}
+  header p{margin:9px 0 0;color:#edf0ff;font-size:14px;line-height:1.7}
+  .timeline{position:relative;margin:24px 0 0;padding-left:25px}
+  .timeline:before{content:"";position:absolute;top:10px;bottom:10px;left:7px;width:2px;background:#d6e2f2}
+  article{position:relative;margin:0 0 14px;padding:18px 20px;background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:0 2px 8px #1c27380a}
+  article:before{content:"";position:absolute;left:-24px;top:23px;width:10px;height:10px;border:3px solid var(--bg);border-radius:50%;background:var(--blue)}
+  .version{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-bottom:8px}
+  h2{margin:0;font-size:17px}
+  .badge{padding:3px 8px;border-radius:20px;background:#eaf2ff;color:#1558ba;font-size:11px;font-weight:600}
+  .badge.alpha{background:#fff4df;color:#9a5b00}
+  ul{margin:0;padding-left:20px;color:#35445b;font-size:14px;line-height:1.75}
+  li+li{margin-top:3px}
+  .file{display:inline-block;margin-top:10px;color:var(--blue);font-size:12px;text-decoration:none;overflow-wrap:anywhere}
+  .file:hover{text-decoration:underline}
+  .note{margin-top:20px;padding:14px 16px;border:1px solid var(--line);border-radius:12px;background:#fff;color:var(--sub);font-size:12px;line-height:1.7}
+  @media(max-width:560px){body{padding:16px 12px 30px}header{padding:22px 20px}h1{font-size:21px}article{padding:16px}}
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>小球竞技场更新日志</h1>
+    <p>记录小球竞技场的版本迭代与主要功能演进。当前主版本为 m1.3.2-patch.1（房间列表联机版）；每个版本均保留为独立文件，便于对照查看。</p>
+  </header>
+
+  <section class="timeline" aria-label="版本更新记录">
+    <article>
+      <div class="version"><h2>m1.3.2-patch.1</h2><span class="badge">最新版</span><span class="badge alpha">联机版</span></div>
+      <ul>
+        <li>新增「房间列表」联机：房主开房后，房客在列表里点「加入」即自动完成握手，不再需要互发配对码；连不上时可退回复制粘贴配对码。</li>
+        <li>房间列表改走公共 MQTT（默认 <code>wss://broker.emqx.io:8084/mqtt</code>，页面内嵌精简 MQTT 客户端，不引第三方库）：房主把「房间名 + offer」以 retained 消息发到 <code>arena/rooms/房间号</code>，房客订阅 <code>arena/rooms/+</code> 即可立刻看到所有房间；房客把 answer 发到 <code>arena/ans/房间号</code>。无需注册、无需部署服务器。</li>
+        <li>公共 broker 自动切换：内置 <code>broker.emqx.io</code> → <code>broker.hivemq.com</code> → <code>test.mosquitto.org</code> 三个地址，某个连不上（6 秒内没有 CONNACK 或直接报错）就自动换下一个，并记住上次成功的那个。手填其它地址时只试手填的。之所以要这个，是因为公共测试服务器经常抽风/按 IP 限流。</li>
+        <li>STUN 改为国内可访问的 <code>stun.miwifi.com:3478</code>（原来的 Google / Cloudflare STUN 在国内常被阻断）。</li>
+        <li>房主关房或断开时发一条空 retained 消息把房间从列表里抹掉，并复位到单机模式。</li>
+        <li><code>cloudflare-worker.js</code> 仍保留在仓库里，作为「有自己域名、绑定到 Workers 后使用」的备选方案（<code>workers.dev</code> 在国内被 DNS 污染，无法直接用）。</li>
+        <li>本地文件（<code>file://</code>）打开时自动识别：浏览器会禁止这类页面建立 WebSocket，所以联机面板会直接显示黄色提示、折叠 MQTT 房间列表区，并把「我是房主/我是房客（手动）」提升为主按钮，避免误以为房间列表坏了。</li>
+        <li>新增 <code>serve.ps1</code>：零依赖的 PowerShell 静态服务器（不需要管理员权限），在电脑上运行后 iPad/手机可用 <code>http://局域网IP:端口/</code> 打开页面，从而让房间列表（WebSocket）正常工作。</li>
+        <li>另存一份纯英文文件名的副本 <code>arena-m1.3.2-patch.1.html</code>（内容与本版完全一致，仅文件名不同），方便上传到 GitHub Pages 等静态托管后直接用 URL 打开（中文文件名会被编码成很长的 %XX 串）。所有历史版本也各生成了一份同规律的英文名副本（<code>arena-v1.0.0.html</code> … <code>arena-v1.3.2.html</code>、<code>arena-m1.3.2.html</code>，更新日志为 <code>arena-changelog.html</code> 且内部链接已改写），并生成了 <code>index.html</code> 版本索引首页（按版本倒序列出全部 19 个可玩版本，说明文字自动取自本日志的第一条）。</li>
+        <li>房间存活机制：房主开房期间每 60 秒重发一次 retained 消息当心跳，房客端只显示 3 分钟内还有心跳的房间，每 15 秒自动重画列表。这样即使房主直接关掉标签页（没点「断开连接」），僵尸房间也会在 3 分钟内自动从列表里消失，不会点进去连不上。</li>
+        <li>MQTT 断线自动重连：按 2s → 4s → 8s → 15s → 30s 退避重试，状态栏显示「N 秒后自动重连（第 K 次）」；重连成功后如果是房主，会把房间重新挂回列表并重新订阅应答主题。点「断开连接」会停止重连（不会在后台一直重试）。</li>
+      </ul>
+      <a class="file" href="./arena-m1.3.2-patch.1.html">打开 小球竞技场m1.3.2-patch.1.html</a>
+      <a class="file" href="./arena-m1.3.2-patch.1.html">打开 arena-m1.3.2-patch.1.html（英文名版，托管用）</a>
+      <a class="file" href="./serve.ps1">查看 serve.ps1（局域网用 http 打开页面）</a>
+      <a class="file" href="./cloudflare-worker.js">查看 cloudflare-worker.js（可选备选）</a>
+    </article>
+
+    <article>
+      <div class="version"><h2>m1.3.2</h2><span class="badge">上一版本</span><span class="badge alpha">联机版</span></div>
+      <ul>
+        <li>新增「局域网联机」（仅 1v1）：控制栏加「联机」按钮，房主与房客互发一段复制粘贴的邀请码/应答码即可建立点对点连接，无服务器、无外网。</li>
+        <li>联机架构为房主权威：房主跑物理并以 30Hz 推送状态，房客只负责渲染；房客可选粉方角色，开始与终止由房主控制。</li>
+        <li>联机时改为手动操作：点击画布朝指针方向释放技能（仍受冷却限制），船锚朝向实时跟随指针，幽灵与医者改为点击进入累计阶段。</li>
+        <li>手机/平板适配：长按拖动即可当鼠标指针用，对局中锁定页面滚动与缩放。</li>
+        <li>修复断开联机后按钮卡死：此前断开时联机状态没复位，房客端开始按钮一直显示「等房主开始」且连同延时/2v2/BOSS 战共 4 个按钮全部不可点。现在断开（或连接失败、手动点「断开连接」）都会切回单机模式、恢复全部按钮、解除页面锁定并结束进行中的对局。</li>
+      </ul>
+      <a class="file" href="./arena-m1.3.2.html">打开 小球竞技场m1.3.2.html</a>
+    </article>
+
+    <article>
+      <div class="version"><h2>v1.3.2</h2></div>
+      <ul>
+        <li>牛仔削弱：子弹反弹次数由 3 次降为 1 次，单发伤害由 10~15 降为 5~12。</li>
+        <li>炮手重做并改名「霰弹枪手」：冷却 7 秒改为 10 秒，一次射出 10 颗子弹，扇形 90° 朝最近敌方、每颗在扇形内随机偏转，单发 8~12 伤。</li>
+        <li>清理炮手旧的逐发补发机制与相关废弃常量。</li>
+      </ul>
+      <a class="file" href="./arena-v1.3.2.html">打开 小球竞技场v1.3.2.html</a>
+    </article>
+
+    <article>
+      <div class="version"><h2>v1.3.1</h2></div>
+      <ul>
+        <li>新增 BOSS「分裂者」：开局 1 个 50 血球，每 2 秒回 5 血；每 15 秒做一次全场分裂判定，满血的球各一分为二（各持一半血），分裂后 5 秒不能回血。</li>
+        <li>分裂体撞击敌方造成 3 伤；BOSS 队支持任意数量小球，界面汇总显示分裂体数量与总血量。</li>
+        <li>医者新增复活技能（每局一次）：队友阵亡后蓄力 30 秒，期间不能发治疗弹，结束时把队友原地以半血复活。</li>
+        <li>修复分裂体角色错位导致不回血、误用炮手技能，以及 BOSS 战结束后待机预览越界报错。</li>
+      </ul>
+      <a class="file" href="./arena-v1.3.1.html">打开 小球竞技场v1.3.1.html</a>
+    </article>
+
+    <article>
+      <div class="version"><h2>v1.3.0</h2></div>
+      <ul>
+        <li>新增「BOSS 战」模式：控制栏在「2v2」右侧加「BOSS战」按钮，1v1 / 2v2 / BOSS 战三种模式互斥。</li>
+        <li>规则为 2 个蓝队球对阵 1 个 BOSS 球；首个 BOSS「舰长³」150 血，3 个船锚以 120° 夹角同时旋转，各自独立钩中与冷却，每次钩中或撞墙造成 5~10 伤。</li>
+        <li>船锚系统重构为支持多个船锚，普通舰长与吸血舰长行为不变。</li>
+        <li>BOSS 战下身份面板只显示蓝方两个队员槽，右侧列改成 BOSS 选择列表；新增 BOSS 只需在角色表加一条 bossOnly 记录。</li>
+      </ul>
+      <a class="file" href="./arena-v1.3.0.html">打开 小球竞技场v1.3.0.html</a>
+    </article>
+
+    <article>
+      <div class="version"><h2>v1.2.6</h2></div>
+      <ul>
+        <li>新增角色「吸血舰长」：球体为红蓝渐变（吸血鬼红 → 舰长蓝），船锚机制与舰长相同但伤害降为 4~8，每次造成伤害后等量回血（上限 50）。</li>
+        <li>新增角色「病毒」：每 15 秒投放 2 个病毒罐，敌方第 x 次碰到受 3 次、间隔 1 秒的 x 点伤害；罐子一碰即碎。</li>
+        <li>新增角色「保安」：无冷却，撞墙时钉端点并拉出警戒线，敌方每次穿线受 3 伤，已完成的线永久保留。</li>
+        <li>病毒罐改为「一碰即碎」，原来可碰 3 次；吸血舰长的渐变端色改用游戏内既有的吸血鬼红与舰长蓝。</li>
+      </ul>
+      <a class="file" href="./arena-v1.2.6.html">打开 小球竞技场v1.2.6.html</a>
+    </article>
+
+    <article>
+      <div class="version"><h2>v1.2.5</h2></div>
+      <ul>
+        <li>新增角色「物理学家」：20 秒冷却，随机触发三种场域之一，各持续 5 秒。</li>
+        <li>场域分三种：电场（每秒 8 伤，场心电磁铁吸走子弹）、引力场（把敌方压向墙壁，按距墙距离结算伤害）、光路（四角激光 + 四块双面镜，敌方穿光受 5 伤）。</li>
+        <li>平衡调整：舰长船锚伤害由 8~15 降为 5~10；物理学家电场每秒伤害由 5 提升为 8。</li>
+      </ul>
+      <a class="file" href="./arena-v1.2.5.html">打开 小球竞技场v1.2.5.html</a>
+    </article>
+
+    <article>
+      <div class="version"><h2>v1.2.4</h2></div>
+      <ul>
+        <li>新增角色「爆破数学家」：15 秒冷却 + 5 秒算式蓄力，蓄力结束朝敌方掷出一枚算式炸药，伤害等于算式结果（≤0 不造成伤害）。</li>
+        <li>新增角色「爆破数学家V2」：伤害固定 40，爆炸半径 = 96px + 算式结果 × 0.2（限制在 40~480px），算式只影响范围。</li>
+        <li>炸药飞行途中显示爆炸范围预览圈，爆破数学家系与爆破手系都支持，药体上标出该发伤害。</li>
+        <li>修复爆破手系描述 96px → 120px、缺失技能名、爆炸飘字固定显示 35，以及 2v2 队徽按球身份判定导致的错位。</li>
+      </ul>
+      <a class="file" href="./arena-v1.2.4.html">打开 小球竞技场v1.2.4.html</a>
+    </article>
+
+    <article>
+      <div class="version"><h2>v1.2.3</h2></div>
+      <ul>
+        <li>重制舰长船锚：船锚在舰长周围 121px 轨道旋转，碰到敌方后造成 8~15 点伤害并拖拽 5 秒；钩住期间碰墙会反弹并造成 8~15 点伤害，最多触发 5 次。</li>
+        <li>钩中结束或碰墙达到上限后进入 15 秒冷却，冷却期间船锚收起，结束后恢复旋转。</li>
+        <li>修复常驻船锚未渲染、被钩目标仍受普通球体碰撞影响，以及敌方被钩击败后未及时结束对局的问题。</li>
+        <li>平衡调整：舰长船锚冷却由 10 秒上调至 15 秒，技能描述与冷却环同步更新。</li>
+      </ul>
+      <a class="file" href="./arena-v1.2.3.html">打开 小球竞技场v1.2.3.html</a>
+    </article>
+
+    <article>
+      <div class="version"><h2>v1.2.2</h2></div>
+      <ul>
+        <li>新增仅限 2v2 的医者：冷却结束后等待队友造成伤害，触发 5 秒蓄力并累计队友实际造成的伤害，随后发射 150% 数值的治疗弹；治疗弹只治疗队友、不治疗自己，可反弹 3 次。</li>
+        <li>新增数学家：15 秒冷却后进行 5 秒随机算式蓄力，按从左到右计算三个 1~10 的随机数和两个运算符；乘方低概率出现且乘方结果封顶 1000，算式结果作为可反弹 3 次的子弹伤害，小数保留，负数或 0 不造成伤害。</li>
+      </ul>
+      <a class="file" href="./arena-v1.2.2.html">打开 小球竞技场v1.2.2.html</a>
+    </article>
+
+    <article>
+      <div class="version"><h2>v1.2.1</h2></div>
+      <ul>
+        <li>2v2 模式下将队伍总血量改为两排队员独立血条，可直接查看四名小球各自的当前生命值与上限。</li>
+        <li>修复 1v1 模式下可视化血量条不显示的问题，恢复双方血条渲染。</li>
+        <li>修复盾兵技能环、球旁标签和顶部技能状态错误显示冷却的问题；不改动盾兵伤害机制。</li>
+      </ul>
+      <a class="file" href="./arena-v1.2.1.html">打开 小球竞技场v1.2.1.html</a>
+    </article>
+
+    <article>
+      <div class="version"><h2>v1.2.0</h2></div>
+      <ul>
+        <li>新增 2v2 对战模式，可分别为蓝方和粉方选择两名角色，共四名角色同场战斗。</li>
+        <li>2v2 中队友不会互相造成技能伤害，生命条显示队伍总生命；击败对方全队即可获胜。</li>
+      </ul>
+      <a class="file" href="./arena-v1.2.0.html">打开 小球竞技场v1.2.0.html</a>
+    </article>
+
+    <article>
+      <div class="version"><h2>v1.1.4</h2></div>
+      <ul>
+        <li>重制幽灵技能：10 秒冷却结束后，首次受到伤害时触发 5 秒减伤，期间承受 50% 伤害。</li>
+        <li>技能期间实际承受的伤害在结束后以 150% 化作一发可反弹 3 次的子弹，随后重新进入 10 秒冷却。</li>
+        <li>幽灵移动改为保持当前方向并在碰到场地边缘时反弹，不再主动随机转向。</li>
+      </ul>
+      <a class="file" href="./arena-v1.1.4.html">打开 小球竞技场v1.1.4.html</a>
+    </article>
+
+    <article>
+      <div class="version"><h2>v1.1.3</h2></div>
+      <ul>
+        <li>调度员火车每次命中造成 5~10 点随机整数伤害。</li>
+        <li>新增调度员V2：每 20 秒召唤四辆稍短的火车，敌方每次碰撞受到 10~15 点随机整数伤害。</li>
+      </ul>
+      <a class="file" href="./arena-v1.1.3.html">打开 小球竞技场v1.1.3.html</a>
+    </article>
+
+    <article>
+      <div class="version"><h2>v1.1.2</h2></div>
+      <ul>
+        <li>同一辆火车可以在小球脱离车身、再次碰撞时重复造成 10 点伤害；碰撞阻挡仍持续生效。</li>
+        <li>两辆纵向和两辆横向火车的车道位置改为每次召唤随机生成，不再固定在相同位置。</li>
+      </ul>
+      <a class="file" href="./arena-v1.1.2.html">打开 小球竞技场v1.1.2.html</a>
+    </article>
+
+    <article>
+      <div class="version"><h2>v1.1.1</h2></div>
+      <ul>
+        <li>火车车身加长至覆盖整条场地，提升纵向和横向穿越效果。</li>
+        <li>修复对局结束或手动终止时遗留列车仍显示的问题；结束时立即清空列车并重绘战场。</li>
+        <li>修复列车已碰撞过小球后不再进行物理阻挡的问题；列车持续执行碰撞反弹，但每辆车仍只对敌方造成一次伤害。</li>
+      </ul>
+      <a class="file" href="./arena-v1.1.1.html">打开 小球竞技场v1.1.1.html</a>
+    </article>
+
+    <article>
+      <div class="version"><h2>v1.1.0</h2></div>
+      <ul>
+        <li>新增调度员角色：每 20 秒召唤 2 辆纵向火车和 2 辆横向火车穿越战场。</li>
+        <li>火车碰到小球时会使其反弹；敌方球每次碰撞受到 10 点伤害，调度员自己的球只反弹、不受伤。</li>
+        <li>新增列车绘制效果与技能冷却显示；火车穿过场地后移出战场，并加长车身以提升视觉效果。</li>
+      </ul>
+      <a class="file" href="./arena-v1.1.0.html">打开 小球竞技场v1.1.0.html</a>
+    </article>
+
+    <article>
+      <div class="version"><h2>v1.0.1</h2></div>
+      <ul>
+        <li>调整盾兵生命值上限：由 200 降低至 150。</li>
+        <li>修复选角后血量显示未同步的问题，盾兵选中后立即显示 150 / 150。</li>
+      </ul>
+      <a class="file" href="./arena-v1.0.1.html">打开 小球竞技场v1.0.1.html</a>
+    </article>
+
+    <article>
+      <div class="version"><h2>v1.0</h2></div>
+      <ul>
+        <li>新增双球竞技场基础布局，场地采用蓝紫渐变，整体视觉更具对战感。</li>
+        <li>增加上方左右两侧血条显示，便于观察双方状态。</li>
+        <li>保留绿色/蓝紫视觉风格的简洁代码结构，方便后续扩充控制逻辑和技能模块。</li>
+        <li>支持基础球体自动弹跳与场地边界反弹，适合作为后续对战小游戏的核心底层。</li>
+      </ul>
+      <a class="file" href="./arena-v1.0.html">打开 小球竞技场v1.0.html</a>
+    </article>
+
+    <article>
+      <div class="version"><h2>v0.1</h2></div>
+      <ul>
+        <li>初版正方形竞技场，使用蓝紫渐变底色。</li>
+        <li>删除中心线，强调干净的比赛场地视觉。</li>
+        <li>单球自动弹跳，作为后续多球与对战系统的雏形。</li>
+      </ul>
+      <a class="file" href="./arena-.html">打开 小球竞技场.html</a>
+    </article>
+  </section>
+
+  <div class="note">
+    说明：本日志按当前目录中的实际版本文件与迭代内容整理。后续如新增小球竞技场版本，将单独创建对应 HTML 文件，并在此处补充对应版本条目，便于快速回溯和对照。
+  </div>
+</main>
+</body>
+</html>

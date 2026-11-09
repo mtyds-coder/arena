@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>小球竞技场 · 全部版本</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    min-height: 100vh; padding: 28px 18px 60px;
+    background: radial-gradient(circle at 50% 0%, #16213e 0%, #0b1020 55%, #06080f 100%);
+    color: #dfe7f5; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+      "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; }
+  h1 { font-size: 26px; font-weight: 800; letter-spacing: 3px; text-align: center; margin-bottom: 8px;
+       background: linear-gradient(90deg,#5eead4,#7dd3fc,#a78bfa);
+       -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .sub { text-align: center; color: #7f8b9c; font-size: 13px; margin-bottom: 26px; }
+  .top { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-bottom: 30px; }
+  .top a {
+    padding: 11px 22px; border-radius: 24px; font-size: 13px; font-weight: 700; text-decoration: none;
+    color: #04121a; background: linear-gradient(180deg,#6ee7db,#38bdf8);
+    box-shadow: 0 6px 18px rgba(56,189,248,.25);
+  }
+  .top a.ghost { background: rgba(255,255,255,.06); color: #cfe6ff; border: 1px solid rgba(255,255,255,.18); box-shadow: none; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(228px, 1fr)); gap: 12px; }
+  .card {
+    display: block; padding: 14px 16px; border-radius: 14px; text-decoration: none;
+    background: rgba(255,255,255,.045); border: 1px solid rgba(255,255,255,.10);
+    transition: transform .12s ease, border-color .12s ease, background .12s ease;
+  }
+  .card:active, .card:hover { transform: translateY(-2px); border-color: rgba(94,234,212,.55); background: rgba(94,234,212,.07); }
+  .v { font-size: 15px; font-weight: 800; color: #eaf2ff; margin-bottom: 6px; }
+  .d { font-size: 12px; color: #93a1b3; line-height: 1.65; min-height: 34px; }
+  .m { font-size: 11px; color: #5f6b7a; margin-top: 8px; }
+  .b { font-size: 10px; padding: 2px 7px; border-radius: 8px; margin-left: 4px; vertical-align: middle; }
+  .b.new { background: rgba(94,234,212,.16); color: #5eead4; border: 1px solid rgba(94,234,212,.4); }
+  .b.live { background: rgba(167,139,250,.16); color: #c4b5fd; border: 1px solid rgba(167,139,250,.4); }
+  footer { text-align: center; color: #4c5666; font-size: 11px; margin-top: 34px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>小球竞技场</h1>
+  <div class="sub">全部版本 · 点击即可在线游玩（无需下载）</div>
+  <div class="top">
+    <a href="./arena-m1.3.2-patch.1.html">▶ 玩最新版</a>
+    <a class="ghost" href="./arena-changelog.html">📋 更新日志</a>
+  </div>
+  <div class="grid">
+    <a class="card" href="./arena-m1.3.2-patch.1.html">
+      <div class="v">m1.3.2-patch.1 <span class="b new">最新版</span></div>
+      <div class="d">新增「房间列表」联机：房主开房后，房客在列表里点「加入」即自动完成握手，不再需要互发配对码；连不上时可退回复制粘贴配对码。</div>
+      <div class="m">214 KB · 点击进入</div>
+    </a>
+    <a class="card" href="./arena-m1.3.2.html">
+      <div class="v">m1.3.2 <span class="b live">联机版</span></div>
+      <div class="d">新增「局域网联机」（仅 1v1）：控制栏加「联机」按钮，房主与房客互发一段复制粘贴的邀请码/应答码即可建立点对点连接，无服务器、无外网。</div>
+      <div class="m">189 KB · 点击进入</div>
+    </a>
+    <a class="card" href="./arena-v1.3.2.html">
+      <div class="v">v1.3.2 </div>
+      <div class="d">牛仔削弱：子弹反弹次数由 3 次降为 1 次，单发伤害由 10~15 降为 5~12。</div>
+      <div class="m">153 KB · 点击进入</div>
+    </a>
+    <a class="card" href="./arena-v1.3.1.html">
+      <div class="v">v1.3.1 </div>
+      <div class="d">新增 BOSS「分裂者」：开局 1 个 50 血球，每 2 秒回 5 血；每 15 秒做一次全场分裂判定，满血的球各一分为二（各持一半血），…</div>
+      <div class="m">153 KB · 点击进入</div>
+    </a>
+    <a class="card" href="./arena-v1.3.0.html">
+      <div class="v">v1.3.0 </div>
+      <div class="d">新增「BOSS 战」模式：控制栏在「2v2」右侧加「BOSS战」按钮，1v1 / 2v2 / BOSS 战三种模式互斥。</div>
+      <div class="m">140 KB · 点击进入</div>
+    </a>
+    <a class="card" href="./arena-v1.2.6.html">
+      <div class="v">v1.2.6 </div>
+      <div class="d">新增角色「吸血舰长」：球体为红蓝渐变（吸血鬼红 → 舰长蓝），船锚机制与舰长相同但伤害降为 4~8，每次造成伤害后等量回血（上限 50）。</div>
+      <div class="m">131 KB · 点击进入</div>
+    </a>
+    <a class="card" href="./arena-v1.2.5.html">
+      <div class="v">v1.2.5 </div>
+      <div class="d">新增角色「物理学家」：20 秒冷却，随机触发三种场域之一，各持续 5 秒。</div>
+      <div class="m">115 KB · 点击进入</div>
+    </a>
+    <a class="card" href="./arena-v1.2.4.html">
+      <div class="v">v1.2.4 </div>
+      <div class="d">新增角色「爆破数学家」：15 秒冷却 + 5 秒算式蓄力，蓄力结束朝敌方掷出一枚算式炸药，伤害等于算式结果（≤0 不造成伤害）。</div>
+      <div class="m">97 KB · 点击进入</div>
+    </a>
+    <a class="card" href="./arena-v1.2.3.html">
+      <div class="v">v1.2.3 </div>
+      <div class="d">重制舰长船锚：船锚在舰长周围 121px 轨道旋转，碰到敌方后造成 8~15 点伤害并拖拽 5 秒；钩住期间碰墙会反弹并造成 8~15 点伤…</div>
+      <div class="m">87 KB · 点击进入</div>
+    </a>
+    <a class="card" href="./arena-v1.2.2.html">
+      <div class="v">v1.2.2 </div>
+      <div class="d">新增仅限 2v2 的医者：冷却结束后等待队友造成伤害，触发 5 秒蓄力并累计队友实际造成的伤害，随后发射 150% 数值的治疗弹；治疗弹只治…</div>
+      <div class="m">88 KB · 点击进入</div>
+    </a>
+    <a class="card" href="./arena-v1.2.1.html">
+      <div class="v">v1.2.1 </div>
+      <div class="d">2v2 模式下将队伍总血量改为两排队员独立血条，可直接查看四名小球各自的当前生命值与上限。</div>
+      <div class="m">77 KB · 点击进入</div>
+    </a>
+    <a class="card" href="./arena-v1.2.0.html">
+      <div class="v">v1.2.0 </div>
+      <div class="d">新增 2v2 对战模式，可分别为蓝方和粉方选择两名角色，共四名角色同场战斗。</div>
+      <div class="m">75 KB · 点击进入</div>
+    </a>
+    <a class="card" href="./arena-v1.1.4.html">
+      <div class="v">v1.1.4 </div>
+      <div class="d">重制幽灵技能：10 秒冷却结束后，首次受到伤害时触发 5 秒减伤，期间承受 50% 伤害。</div>
+      <div class="m">71 KB · 点击进入</div>
+    </a>
+    <a class="card" href="./arena-v1.1.3.html">
+      <div class="v">v1.1.3 </div>
+      <div class="d">调度员火车每次命中造成 5~10 点随机整数伤害。</div>
+      <div class="m">72 KB · 点击进入</div>
+    </a>
+    <a class="card" href="./arena-v1.1.2.html">
+      <div class="v">v1.1.2 </div>
+      <div class="d">同一辆火车可以在小球脱离车身、再次碰撞时重复造成 10 点伤害；碰撞阻挡仍持续生效。</div>
+      <div class="m">71 KB · 点击进入</div>
+    </a>
+    <a class="card" href="./arena-v1.1.1.html">
+      <div class="v">v1.1.1 </div>
+      <div class="d">火车车身加长至覆盖整条场地，提升纵向和横向穿越效果。</div>
+      <div class="m">71 KB · 点击进入</div>
+    </a>
+    <a class="card" href="./arena-v1.1.0.html">
+      <div class="v">v1.1.0 </div>
+      <div class="d">新增调度员角色：每 20 秒召唤 2 辆纵向火车和 2 辆横向火车穿越战场。</div>
+      <div class="m">70 KB · 点击进入</div>
+    </a>
+    <a class="card" href="./arena-v1.0.1.html">
+      <div class="v">v1.0.1 </div>
+      <div class="d">调整盾兵生命值上限：由 200 降低至 150。</div>
+      <div class="m">63 KB · 点击进入</div>
+    </a>
+    <a class="card" href="./arena-v1.0.0.html">
+      <div class="v">v1.0.0 </div>
+      <div class="d">早期版本</div>
+      <div class="m">63 KB · 点击进入</div>
+    </a>
+  </div>
+  <footer>共 19 个版本 · 托管于 GitHub Pages</footer>
+</div>
+</body>
+</html>
