@@ -260,6 +260,16 @@
     background: rgba(255,196,84,.10); border: 1px solid rgba(255,196,84,.35); color: #ffd79a;
   }
   .net-hint b { color: #ffe9bf; }
+  /* 当前所在房间的状态条 */
+  .net-room-now {
+    margin: 4px 0 8px; padding: 9px 12px; border-radius: 10px;
+    font-size: 12px; font-weight: 700; letter-spacing: .3px;
+    background: rgba(255,255,255,.04); border: 1px dashed rgba(255,255,255,.16);
+    color: #6f7b8b;
+  }
+  .net-room-now.on { border-style: solid; }
+  .net-room-now.host { background: rgba(94,234,212,.10); border-color: rgba(94,234,212,.45); color: #8ff3e4; }
+  .net-room-now.guest { background: rgba(167,139,250,.10); border-color: rgba(167,139,250,.45); color: #c7b8ff; }
   .net-rooms {
     margin: 6px 0 4px; padding: 8px 10px; border-radius: 10px;
     background: rgba(255,255,255,.035); border: 1px solid rgba(255,255,255,.10);
@@ -404,6 +414,7 @@
         <button id="netCreateRoomBtn">开房间</button>
       </div>
       <div id="netRoomList" class="net-rooms">未连接信令服务</div>
+      <div id="netRoomNow" class="net-room-now">未加入房间</div>
       </div>
 
       <!-- ===== 手动配对（兜底） ===== -->
@@ -4329,7 +4340,11 @@ function canCastNow(owner) {
 function netSnapshot() {
   var hooks = [];
   eachHook(function (h) {
-    hooks.push([h.owner, r1(h.ax || 0), r1(h.ay || 0), r2(h.ang), h.r,
+    // ax/ay 未定位（还没开局）时发 null，让房客端按 owner 位置推算；发 0 会被画到左上角
+    hooks.push([h.owner,
+      h.ax == null ? null : r1(h.ax),
+      h.ay == null ? null : r1(h.ay),
+      r2(h.ang), h.r,
       h.released ? 1 : 0, h.hooked ? 1 : 0, r2(h.cd)]);
   });
   return {
@@ -4372,7 +4387,11 @@ var netReady = [0, 0];
 var netLastStateTime = 0;
 
 function netApplyState(s) {
-  if (s.ro) { selected[0] = s.ro[0]; selected[1] = s.ro[1]; }
+  var roChanged = false;
+  if (s.ro) {
+    if (selected[0] !== s.ro[0] || selected[1] !== s.ro[1]) roChanged = true;
+    selected[0] = s.ro[0]; selected[1] = s.ro[1];
+  }
   if (s.hp) { hp[0] = s.hp[0]; hp[1] = s.hp[1]; }
   if (s.cd) { cd[0] = s.cd[0]; cd[1] = s.cd[1]; }          // 冷却同步给房客，技能环才能画
   if (s.rdy) { netReady[0] = s.rdy[0]; netReady[1] = s.rdy[1]; }
@@ -4437,7 +4456,11 @@ function netApplyState(s) {
     for (var i = 0; i < s.hk.length; i++) {
       var a = s.hk[i];
       var h = {
-        owner: a[0], ax: a[1], ay: a[2], ang: a[3], r: a[4],
+        owner: a[0],
+        // 房主还没开局时锚没有坐标，这里必须保持 null，否则会被画到左上角
+        ax: (a[1] == null ? null : a[1]),
+        ay: (a[2] == null ? null : a[2]),
+        ang: a[3], r: a[4],
         released: !!a[5], hooked: !!a[6], cd: a[7], extras: [],
         target: null, hits: 0, t: 0
       };
@@ -4445,6 +4468,8 @@ function netApplyState(s) {
       else hook[a[0]].extras.push(h);
     }
   }
+  // 角色换了要同步顶部名字（否则房客端球和血条变了、名字还是旧的）
+  if (roChanged) syncTopNames();
   netGuestApplyHUD();
   netRender();
 }
@@ -4914,6 +4939,20 @@ function netSigRefresh() {
   setTimeout(netSigRenderRooms, 800);
 }
 
+// 面板里那条「当前房间」状态：kind = 'host' | 'guest' | null
+function netRoomBarSet(kind, name, id) {
+  var el = document.getElementById('netRoomNow');
+  if (!el) return;
+  if (!kind) {
+    el.className = 'net-room-now';
+    el.textContent = '未加入房间';
+    return;
+  }
+  el.className = 'net-room-now on ' + kind;
+  el.textContent = (kind === 'host' ? '🟢 你是房主' : '🔵 你是房客') +
+    ' · 房间「' + name + '」· 房间号 ' + id;
+}
+
 function netEsc(s) {
   return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
     return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
@@ -5008,6 +5047,7 @@ function netSigHost() {
       JSON.stringify({ n: name, o: SIG.offerJson, t: Date.now() }), true);
     mqSubscribe(MQ_TOPIC_ANS + id);
     if (ok) netSigStartHeartbeat();
+    netRoomBarSet(ok ? 'host' : null, name, id);
     netSigStatus(ok
       ? ('已开房：' + name + '（房间号 ' + id + '），等待房客加入…')
       : '发布房间失败，请重试');
@@ -5028,6 +5068,8 @@ function netSigJoin(roomId) {
   NET.pc = netNewPC();
   NET.pc.ondatachannel = function (ev) { netBindChannel(ev.channel); };
   netSigStatus('正在连接房间 ' + room.name + ' …');
+  netRoomBarSet('guest', room.name, roomId);
+  SIG.guestRoom = { name: room.name, id: roomId };
 
   NET.pc.setRemoteDescription(JSON.parse(room.offer)).then(function () {
     return NET.pc.createAnswer();
@@ -5061,6 +5103,8 @@ function netSigStartHeartbeat() {
 
 function netSigCloseRoom() {
   netSigStopHeartbeat();
+  SIG.guestRoom = null;
+  netRoomBarSet(null);
   if (!SIG.roomId) return;
   var id = SIG.roomId;
   SIG.roomId = null;
